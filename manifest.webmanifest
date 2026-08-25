@@ -1,0 +1,11 @@
+{
+  "name": "MycoMy — carnet mycologique",
+  "short_name": "MycoMy",
+  "description": "Carte et carnet mycologique personnel autour de Bruebach.",
+  "lang": "fr",
+  "start_url": "./?v=11.2",
+  "display": "standalone",
+  "background_color": "#f5f1e7",
+  "theme_color": "#173c2b",
+  "orientation": "portrait-primary"
+}

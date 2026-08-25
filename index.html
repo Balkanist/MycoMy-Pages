@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#173c2b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="MycoMy">
+  <title>MycoMy</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="styles.css?v=8">
+</head>
+<body>
+  <header class="hero">
+    <div>
+      <p class="eyebrow">Carnet mycologique personnel</p>
+      <h1>MycoMy</h1>
+      <p>Explorer les conditions favorables autour de vos zones, sans révéler vos coins.</p>
+    </div>
+    <button id="locateButton" class="round-button" type="button" aria-label="Afficher ma position">⌖</button>
+  </header>
+
+  <main>
+    <section class="weather-card" aria-labelledby="weatherTitle">
+      <div>
+      <p class="eyebrow">Météo‑France · bilan hydrique sur 21 jours</p>
+        <h2 id="weatherTitle">Indice météo local</h2>
+      </div>
+      <div id="weatherScore" class="score" aria-live="polite">—</div>
+      <p id="weatherDetails" class="muted">Chargement des données locales…</p>
+      <div id="growthIndicator" class="growth-indicator" aria-live="polite">
+        <div class="growth-heading">
+          <div><span class="growth-kicker">Indicateur de pousse</span><strong id="growthSpecies">Chargement…</strong></div>
+          <span id="growthValue" class="growth-value">—/100</span>
+        </div>
+        <div class="growth-track" aria-hidden="true"><i id="growthBar"></i></div>
+        <strong id="growthStatus" class="growth-status">Calcul des conditions en cours</strong>
+        <p id="growthExplanation" class="microcopy">Pluie, bilan hydrique, humidité et température du sol.</p>
+      </div>
+      <p class="microcopy">Cet indice décrit uniquement la météo. Il ne confirme ni la présence ni la comestibilité d’un champignon.</p>
+    </section>
+
+    <section class="panel map-panel" aria-labelledby="mapTitle">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Modèle MycoMy v11 · analyse fine en cascade jusqu’à ~75–85 m</p>
+          <h2 id="mapTitle">Carte personnelle</h2>
+        </div>
+        <div class="map-actions">
+          <button id="expandMapButton" class="secondary" type="button">Plein écran</button>
+          <button id="addSpotButton" class="primary" type="button">+ Observation</button>
+        </div>
+      </div>
+      <div class="map-stage">
+        <aside id="mapSidebar" class="map-sidebar" aria-label="Outils de recherche">
+          <div class="sidebar-head">
+            <div><span class="map-label">Exploration locale</span><strong id="areaTitle">Autour de Bruebach</strong></div>
+            <button id="closeSidebarButton" class="close-button" type="button" aria-label="Fermer les filtres">×</button>
+          </div>
+          <div class="sidebar-tabs" role="tablist" aria-label="Modes de recherche">
+            <button class="sidebar-tab active" data-tab="mushrooms" role="tab" aria-selected="true" type="button">Champignons</button>
+            <button class="sidebar-tab" data-tab="advanced" role="tab" aria-selected="false" type="button">Recherche avancée</button>
+            <button class="sidebar-tab" data-tab="timing" role="tab" aria-selected="false" type="button">Meilleur moment</button>
+          </div>
+          <section id="tab-mushrooms" class="sidebar-content active" role="tabpanel">
+            <p class="microcopy">Choisissez l’espèce à rechercher. Les zones sont des probabilités, jamais des lieux garantis.</p>
+            <div id="sidebarSpecies" class="sidebar-species"></div>
+          </section>
+          <section id="tab-advanced" class="sidebar-content" role="tabpanel">
+            <label>Zone de recherche
+              <select id="areaSelect">
+                <option value="bruebach" selected>Bruebach · rayon maximal 40 km</option>
+                <option value="porcelette">Porcelette · rayon maximal 10 km</option>
+              </select>
+            </label>
+            <label id="radiusFilterLabel">Distance autour de Bruebach
+              <select id="radiusFilter">
+                <option value="5">5 km</option>
+                <option value="10">10 km</option>
+                <option value="15">15 km</option>
+                <option value="20">20 km</option>
+                <option value="30">30 km</option>
+                <option value="40" selected>40 km</option>
+              </select>
+            </label>
+            <label>Score minimal
+              <span class="range-line"><input id="scoreFilter" type="range" min="0" max="80" step="5" value="0"><output id="scoreFilterValue">0/100</output></span>
+            </label>
+            <label>Type de peuplement
+              <select id="forestFilter">
+                <option value="all">Tous les peuplements</option>
+                <option value="broadleaf">Feuillus renseignés</option>
+                <option value="conifer">Conifères renseignés</option>
+              </select>
+            </label>
+            <button id="applyFiltersButton" class="primary full" type="button">Mettre à jour la carte</button>
+            <p id="filterSummary" class="microcopy">Toutes les mailles du rayon pilote sont affichées.</p>
+          </section>
+          <section id="tab-timing" class="sidebar-content" role="tabpanel">
+            <p id="timingIntro" class="microcopy">Prévision indicative fondée sur la pluie, la température et la saison.</p>
+            <div id="bestDays" class="best-days"><p class="muted">Chargement de la météo…</p></div>
+          </section>
+        </aside>
+        <div class="map-toolbar">
+          <button id="closeMapButton" class="map-close" type="button" aria-label="Quitter le plein écran">×</button>
+          <div>
+            <span class="map-label">Potentiel indicatif</span>
+            <select id="mapSpecies" aria-label="Espèce affichée"></select>
+          </div>
+          <button id="openSidebarButton" class="layer-button" type="button" aria-label="Ouvrir les filtres" title="Filtres">☰</button>
+          <button id="toggleZonesButton" class="layer-button active" type="button" aria-pressed="true" title="Afficher ou masquer les zones">▱</button>
+          <button id="toggleLidarButton" class="layer-button" type="button" aria-pressed="false" title="Relief IGN LiDAR HD à fort zoom">⌁</button>
+        </div>
+        <div id="map" role="application" aria-label="Carte de vos zones de recherche et de vos récoltes"></div>
+        <div class="map-legend" aria-live="polite">
+          <span><i class="legend-swatch band-0"></i>0–19 %</span>
+          <span><i class="legend-swatch band-20"></i>20–39 %</span>
+          <span><i class="legend-swatch band-40"></i>40–59 %</span>
+          <span><i class="legend-swatch band-60"></i>60–79 %</span>
+          <span><i class="legend-swatch band-80"></i>80–100 %</span>
+          <strong id="zoneStatus">Chargement des forêts…</strong>
+        </div>
+      </div>
+      <p class="microcopy">Modèle multi-critères explicable : peuplements et hydrographie IGN, relief RGE ALTI/LiDAR, géologie BRGM, pH SoilGrids, sols GIS Sol/INRAE, probabilités d’essences JRC/FISE, météo Météo-France et observations GBIF agrégées. À partir du zoom 15, les mailles ayant un score initial d’au moins 60/100, leurs voisines proches et les secteurs observés sont affinés à ~75–85 m. Les autres restent visibles avec leur score initial. Vos marqueurs restent dans ce navigateur.</p>
+      <div class="data-sources" aria-label="Données intégrées">
+        <span>🌳 Peuplements IGN</span><span>🌲 Essences RPP JRC</span><span>🧪 pH SoilGrids</span><span>🪨 Géologie BRGM 1:50 000</span><span>⛰ Relief/LiDAR IGN</span><span>💧 Hydrographie IGN</span><span>💦 Zones humides CIGAL</span><span>🌱 Sols GIS Sol/INRAE</span><span>🕰 Forêt ancienne</span><span>📍 GBIF agrégé</span>
+      </div>
+      <p class="microcopy">Résolutions natives : masque forestier IGN vectoriel, relief jusqu’à 1 m, pH SoilGrids 250 m, essences RPP JRC 1 km et météo plusieurs kilomètres. La maille d’affichage de 75–85 m ne rend pas ces sources plus précises. L’indice d’humidité reste une heuristique locale fondée sur l’eau proche, la pente et le contexte pédologique.</p>
+    </section>
+
+    <section class="panel" aria-labelledby="speciesTitle">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Catalogue de départ</p>
+          <h2 id="speciesTitle">Espèces recherchées</h2>
+        </div>
+      </div>
+      <div id="speciesFilters" class="filter-row" aria-label="Filtrer les espèces"></div>
+      <div id="speciesList" class="species-list"></div>
+    </section>
+
+    <section class="warning-card">
+      <strong>Règle de sécurité</strong>
+      <p>Cette application aide à choisir une zone et à tenir un carnet. Elle n’identifie jamais un champignon. En cas de doute, ne consommez pas la récolte et faites-la contrôler par un pharmacien ou un mycologue.</p>
+    </section>
+  </main>
+
+  <dialog id="spotDialog">
+    <form id="spotForm" method="dialog">
+      <div class="dialog-heading">
+        <h2>Ajouter une observation</h2>
+        <button id="closeDialog" class="close-button" type="button" aria-label="Fermer">×</button>
+      </div>
+      <label>Espèce
+        <select id="spotSpecies" required></select>
+      </label>
+      <fieldset class="outcome-choice">
+        <legend>Résultat</legend>
+        <label><input type="radio" name="spotOutcome" value="found" checked> Trouvé</label>
+        <label><input type="radio" name="spotOutcome" value="not_found"> Pas trouvé</label>
+      </fieldset>
+      <label>Date
+        <input id="spotDate" type="date" required>
+      </label>
+      <label>Note personnelle
+        <textarea id="spotNote" rows="3" placeholder="Sous hêtres, sol humide…"></textarea>
+      </label>
+      <p id="spotLocation" class="muted">Position : centre de la zone sélectionnée</p>
+      <button id="useLocationButton" class="secondary" type="button">Utiliser ma position</button>
+      <button class="primary full" type="submit">Enregistrer sur cet iPhone</button>
+    </form>
+  </dialog>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js?v=11.2"></script>
+</body>
+</html>
