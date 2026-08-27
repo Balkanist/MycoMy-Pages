@@ -1,7 +1,7 @@
-const CACHE = "mycomy-v12";
+const CACHE = "mycomy-v12-1";
 // Les gros fichiers géographiques ne sont plus préchargés : sur iPhone, deux
 // téléchargements concurrents de la zone Bruebach pouvaient saturer Safari.
-const APP_SHELL = ["./", "./index.html", "./styles.css?v=12", "./app.js?v=12", "./manifest.webmanifest"];
+const APP_SHELL = ["./", "./index.html", "./styles.css?v=12.1", "./app.js?v=12.1", "./manifest.webmanifest"];
 
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(APP_SHELL)));

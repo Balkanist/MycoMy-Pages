@@ -669,6 +669,44 @@ function growthSummaryForView(item) {
   };
 }
 
+function forecastGrowthAtLocation(item, location, offset) {
+  const nearest = nearestWeatherNodes(location.lat, location.lng)
+    .map(entry => ({ ...entry, growth: growthModelForForecastDay(item, entry.node, offset) }))
+    .filter(entry => entry.growth);
+  if (!nearest.length) return null;
+  const average = selector => {
+    const weighted = nearest.reduce((result, entry) => ({
+      sum: result.sum + Number(selector(entry)) * entry.weight,
+      weights: result.weights + entry.weight
+    }), { sum: 0, weights: 0 });
+    return weighted.sum / weighted.weights;
+  };
+  return {
+    date: nearest[0].growth.date,
+    score: average(entry => entry.growth.score),
+    rain: average(entry => entry.growth.rain),
+    balance: average(entry => entry.growth.balance),
+    moisture: average(entry => entry.growth.moisture),
+    soilTemperature: average(entry => entry.growth.soilTemperature)
+  };
+}
+
+function forecastGrowthSummaryForView(item, offset, sample) {
+  const values = sample.locations.map(location => forecastGrowthAtLocation(item, location, offset)).filter(Boolean);
+  if (!values.length) return null;
+  const average = key => values.reduce((sum, value) => sum + value[key], 0) / values.length;
+  return {
+    date: values[0].date,
+    score: Math.round(average("score")),
+    minScore: Math.round(Math.min(...values.map(value => value.score))),
+    maxScore: Math.round(Math.max(...values.map(value => value.score))),
+    rain: average("rain"),
+    balance: average("balance"),
+    moisture: average("moisture"),
+    soilTemperature: average("soilTemperature")
+  };
+}
+
 function observationBoost(feature, speciesId = selectedMapSpecies) {
   const model = observationModel.species?.[speciesId];
   if (!model?.cells) return 0;
@@ -1072,11 +1110,10 @@ function rangeScore(value, [low, high], maximum) {
   return Math.max(0, Math.round(maximum * (1 - distance / span)));
 }
 
-function growthModelFor(item, model = centerWeatherModel) {
+function growthModelForDay(item, model, end, moisture = model?.moisture, soilTemperature = model?.soilTemperature) {
   if (!item || !model?.data?.daily) return null;
   const profile = GROWTH_PROFILES[item.id] || GROWTH_PROFILES.default;
   const daily = model.data.daily;
-  const end = model.historyDays;
   const rain = sumRecent(daily.precipitation_sum, end, profile.rainDays);
   const et0 = sumRecent(daily.et0_fao_evapotranspiration, end, profile.rainDays);
   const balance = rain - et0;
@@ -1084,13 +1121,33 @@ function growthModelFor(item, model = centerWeatherModel) {
   const seasonal = Math.min(22, Math.round(seasonScoreFor(item, today) * 1.22));
   const rainPoints = Math.min(26, Math.round(rain / profile.rainTarget * 26));
   const balancePoints = Math.max(0, Math.min(14, Math.round(7 + balance / 8)));
-  const moisturePoints = rangeScore(model.moisture, profile.moisture, 20);
-  const temperaturePoints = rangeScore(model.soilTemperature, profile.soilTemp, 18);
+  const moisturePoints = rangeScore(moisture, profile.moisture, 20);
+  const temperaturePoints = rangeScore(soilTemperature, profile.soilTemp, 18);
   const score = Math.max(0, Math.min(100, seasonal + rainPoints + balancePoints + moisturePoints + temperaturePoints));
   return {
     score, rain, balance, seasonal, rainPoints, balancePoints, moisturePoints, temperaturePoints,
     daysSinceRain: daysSinceTriggerRain(daily, end, profile.triggerRain), profile
   };
+}
+
+function growthModelFor(item, model = centerWeatherModel) {
+  return growthModelForDay(item, model, model?.historyDays || 0);
+}
+
+function forecastSoilAverage(model, dailyIndex, field, fallback) {
+  const values = model?.soilData?.hourly?.[field];
+  if (!Array.isArray(values)) return fallback;
+  const start = Math.max(0, dailyIndex * 24);
+  const slice = values.slice(start, start + 24).filter(Number.isFinite);
+  return slice.length ? slice.reduce((sum, value) => sum + value, 0) / slice.length : fallback;
+}
+
+function growthModelForForecastDay(item, model, offset) {
+  const dailyIndex = (model?.historyDays || 0) + offset;
+  const moisture = forecastSoilAverage(model, dailyIndex, "soil_moisture_0_to_7cm", model?.moisture);
+  const soilTemperature = forecastSoilAverage(model, dailyIndex, "soil_temperature_0cm", model?.soilTemperature);
+  const result = growthModelForDay(item, model, dailyIndex + 1, moisture, soilTemperature);
+  return result ? { ...result, moisture, soilTemperature, date: model.data.daily.time[dailyIndex] } : null;
 }
 
 function growthLevel(score) {
@@ -1127,6 +1184,7 @@ function renderWeatherOverview() {
 function renderSpatialWeatherIndicators() {
   renderWeatherOverview();
   renderGrowthIndicator();
+  renderBestDays();
 }
 
 async function loadWeather() {
@@ -1179,7 +1237,7 @@ async function loadWeather() {
       const moistureScore = moisture >= .28 ? 22 : moisture >= .20 ? 16 : moisture >= .14 ? 9 : 3;
       const soilTemperatureScore = soilTemperature >= 8 && soilTemperature <= 20 ? 15 : soilTemperature >= 4 && soilTemperature <= 24 ? 9 : 3;
       return {
-        ...requestedPoints[index], data, historyDays, rain, et0, balance, mean, moisture, soilTemperature,
+        ...requestedPoints[index], data, soilData, historyDays, rain, et0, balance, mean, moisture, soilTemperature,
         potential: Math.round(Math.min(100, rainScore + balanceScore + moistureScore + soilTemperatureScore))
       };
     });
@@ -1225,27 +1283,28 @@ function seasonScoreFor(item, isoDate) {
 }
 
 function renderBestDays() {
-  if (!weatherSeries) return;
+  if (!weatherNodes.length) return;
   const selected = species.find(item => item.id === selectedMapSpecies);
-  const start = weatherHistoryDays;
-  const days = weatherSeries.time.slice(start, start + 7).map((date, offset) => {
-    const index = start + offset;
-    const recentRain = weatherSeries.precipitation_sum.slice(Math.max(0, index - 14), index + 1).reduce((sum, value) => sum + (value || 0), 0);
-    const recentEt0 = weatherSeries.et0_fao_evapotranspiration.slice(Math.max(0, index - 14), index + 1).reduce((sum, value) => sum + (value || 0), 0);
-    const temperature = weatherSeries.temperature_2m_mean[index];
-    const rainPoints = Math.min(55, recentRain * 1.7);
-    const waterBalancePoints = Math.max(0, Math.min(15, 8 + (recentRain - recentEt0) * .5));
-    const tempPoints = temperature >= 7 && temperature <= 20 ? 23 : temperature >= 3 && temperature <= 24 ? 13 : 4;
-    return { date, temperature, rain: recentRain, balance: recentRain - recentEt0, score: Math.round(Math.min(100, rainPoints + waterBalancePoints + tempPoints + seasonScoreFor(selected, date))) };
-  });
+  const sample = visibleWeatherLocations(90);
+  const days = Array.from({ length: 7 }, (_, offset) => forecastGrowthSummaryForView(selected, offset, sample)).filter(Boolean);
+  if (!days.length) return;
   const bestScore = Math.max(...days.map(day => day.score));
-  document.querySelector("#timingIntro").textContent = `${selected.name} · estimation sur les sept prochains jours.`;
-  document.querySelector("#bestDays").innerHTML = days.map(day => `
-    <article class="day-card ${day.score === bestScore ? "best" : ""}">
-      <strong>${new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "short" }).format(new Date(`${day.date}T12:00:00`))}</strong>
-      <span>${day.rain.toFixed(1)} mm sur 15 j · bilan ${day.balance >= 0 ? "+" : ""}${day.balance.toFixed(1)} · ${Number.isFinite(day.temperature) ? day.temperature.toFixed(1) : "—"} °C</span>
+  const current = growthSummaryForView(selected)?.score ?? days[0].score;
+  document.querySelector("#timingIntro").textContent = `${selected.name} · ${viewExtentLabel(sample)}`;
+  document.querySelector("#bestDays").innerHTML = days.map((day, index) => {
+    const previous = index ? days[index - 1].score : current;
+    const delta = day.score - previous;
+    const trend = delta >= 4 ? "↗" : delta <= -4 ? "↘" : "→";
+    const date = new Date(`${day.date}T12:00:00`);
+    const title = `${day.score}/100 (plage ${day.minScore}–${day.maxScore}) · pluie ${day.rain.toFixed(1)} mm · bilan ${day.balance >= 0 ? "+" : ""}${day.balance.toFixed(1)} mm · sol ${(day.moisture * 100).toFixed(0)} % et ${day.soilTemperature.toFixed(1)} °C`;
+    return `
+    <article class="forecast-day ${day.score === bestScore ? "best" : ""}" title="${title}" aria-label="${title}">
+      <strong>${new Intl.DateTimeFormat("fr-FR", { weekday: "short" }).format(date).replace(".", "")}</strong>
+      <span class="forecast-date">${new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit" }).format(date)}</span>
       <span class="day-score">${day.score}</span>
-    </article>`).join("");
+      <span class="day-trend" aria-hidden="true">${trend}</span>
+    </article>`;
+  }).join("");
 }
 
 function useCurrentPosition({ centerMap = false } = {}) {
@@ -1307,11 +1366,7 @@ function initForm() {
 }
 
 function updateAreaControls() {
-  const radiusInput = document.querySelector("#radiusFilter");
-  const distances = [5, 10, 15, 20, 30, 40].filter(value => value <= activeArea.radius);
-  radiusInput.innerHTML = distances.map(value => `<option value="${value}" ${value === activeArea.radius ? "selected" : ""}>${value} km</option>`).join("");
-  document.querySelector("#radiusFilterLabel").firstChild.textContent = `Distance autour de ${activeArea.name}`;
-  document.querySelector("#areaTitle").textContent = `Autour de ${activeArea.name}`;
+  advancedFilters = { radius: activeArea.radius, minScore: 0, forest: "all" };
   document.querySelector("#weatherTitle").textContent = `Indice météo spatialisé · ${activeArea.name}`;
   document.querySelector("#areaChoiceLabel").textContent = `${activeArea.name} · ${activeArea.radius} km`;
   document.querySelector("#areaSelect").value = activeArea.id;
@@ -1361,7 +1416,6 @@ function initMapControls() {
   mapSpecies.addEventListener("change", () => {
     selectedMapSpecies = mapSpecies.value;
     if (forestFeatures.length) renderForestZones();
-    syncSidebarSpecies();
     renderBestDays();
     renderGrowthIndicator();
   });
@@ -1385,51 +1439,13 @@ function initMapControls() {
   };
   document.querySelector("#expandMapButton").addEventListener("click", () => setExpanded(true));
   document.querySelector("#closeMapButton").addEventListener("click", () => setExpanded(false));
-
-  document.querySelector("#sidebarSpecies").innerHTML = species.map(item => `<label class="species-radio"><input type="radio" name="sidebar-species" value="${item.id}" ${item.id === selectedMapSpecies ? "checked" : ""}><span>${item.name}</span></label>`).join("");
-  document.querySelectorAll("input[name='sidebar-species']").forEach(input => input.addEventListener("change", () => {
-    selectedMapSpecies = input.value;
-    mapSpecies.value = selectedMapSpecies;
-    if (forestFeatures.length) renderForestZones();
-    renderBestDays();
-    renderGrowthIndicator();
-  }));
-
-  document.querySelectorAll(".sidebar-tab").forEach(button => button.addEventListener("click", () => {
-    document.querySelectorAll(".sidebar-tab").forEach(tab => {
-      const active = tab === button;
-      tab.classList.toggle("active", active);
-      tab.setAttribute("aria-selected", String(active));
-    });
-    document.querySelectorAll(".sidebar-content").forEach(content => content.classList.toggle("active", content.id === `tab-${button.dataset.tab}`));
-  }));
-
-  const sidebar = document.querySelector("#mapSidebar");
-  document.querySelector("#openSidebarButton").addEventListener("click", () => sidebar.classList.add("open"));
-  document.querySelector("#closeSidebarButton").addEventListener("click", () => sidebar.classList.remove("open"));
-  const scoreInput = document.querySelector("#scoreFilter");
-  scoreInput.addEventListener("input", () => document.querySelector("#scoreFilterValue").textContent = `${scoreInput.value}/100`);
-  document.querySelector("#applyFiltersButton").addEventListener("click", () => {
-    advancedFilters = {
-      radius: Number(document.querySelector("#radiusFilter").value),
-      minScore: Number(scoreInput.value),
-      forest: document.querySelector("#forestFilter").value
-    };
-    renderForestZones();
-    if (window.innerWidth < 900) sidebar.classList.remove("open");
-  });
-}
-
-function syncSidebarSpecies() {
-  const input = document.querySelector(`input[name='sidebar-species'][value='${selectedMapSpecies}']`);
-  if (input) input.checked = true;
 }
 
 async function prepareServiceWorker() {
   if (!("serviceWorker" in navigator) || location.protocol === "file:") return;
   try {
     const previousController = navigator.serviceWorker.controller;
-    const registration = await navigator.serviceWorker.register("sw.js?v=12", { updateViaCache: "none" });
+    const registration = await navigator.serviceWorker.register("sw.js?v=12.1", { updateViaCache: "none" });
     await registration.update();
     if (previousController && navigator.serviceWorker.controller === previousController) {
       await Promise.race([

@@ -10,7 +10,7 @@
   <title>MycoMy</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=12">
+  <link rel="stylesheet" href="styles.css?v=12.1">
 </head>
 <body>
   <header class="hero">
@@ -51,6 +51,13 @@
         <strong id="growthStatus" class="growth-status">Calcul des conditions en cours</strong>
         <p id="growthExplanation" class="microcopy">Pluie, bilan hydrique, humidité et température du sol.</p>
         <p id="growthScope" class="growth-scope">Vue cartographique en cours d’analyse…</p>
+        <div class="growth-forecast" aria-labelledby="timingIntro">
+          <div class="forecast-heading">
+            <strong>7 jours glissants</strong>
+            <span id="timingIntro">Prévision spatialisée en cours…</span>
+          </div>
+          <div id="bestDays" class="best-days"><p class="muted">Chargement de la météo…</p></div>
+        </div>
       </div>
       <p class="microcopy">Les deux indices suivent l’emprise visible de la carte et sont recalculés après un zoom ou un déplacement. Ils ne confirment ni la présence ni la comestibilité d’un champignon.</p>
     </section>
@@ -58,7 +65,7 @@
     <section class="panel map-panel" aria-labelledby="mapTitle">
       <div class="section-heading">
         <div>
-          <p class="eyebrow">Modèle MycoMy v12 · météo spatialisée et analyse fine jusqu’à ~75–85 m</p>
+          <p class="eyebrow">Modèle MycoMy v12.1 · météo spatialisée et analyse fine jusqu’à ~75–85 m</p>
           <h2 id="mapTitle">Carte personnelle</h2>
         </div>
         <div class="map-actions">
@@ -67,56 +74,12 @@
         </div>
       </div>
       <div class="map-stage">
-        <aside id="mapSidebar" class="map-sidebar" aria-label="Outils de recherche">
-          <div class="sidebar-head">
-            <div><span class="map-label">Exploration locale</span><strong id="areaTitle">Autour de Bruebach</strong></div>
-            <button id="closeSidebarButton" class="close-button" type="button" aria-label="Fermer les filtres">×</button>
-          </div>
-          <div class="sidebar-tabs" role="tablist" aria-label="Modes de recherche">
-            <button class="sidebar-tab active" data-tab="mushrooms" role="tab" aria-selected="true" type="button">Champignons</button>
-            <button class="sidebar-tab" data-tab="advanced" role="tab" aria-selected="false" type="button">Recherche avancée</button>
-            <button class="sidebar-tab" data-tab="timing" role="tab" aria-selected="false" type="button">Meilleur moment</button>
-          </div>
-          <section id="tab-mushrooms" class="sidebar-content active" role="tabpanel">
-            <p class="microcopy">Choisissez l’espèce à rechercher. Les zones sont des probabilités, jamais des lieux garantis.</p>
-            <div id="sidebarSpecies" class="sidebar-species"></div>
-          </section>
-          <section id="tab-advanced" class="sidebar-content" role="tabpanel">
-            <label id="radiusFilterLabel">Distance autour de Bruebach
-              <select id="radiusFilter">
-                <option value="5">5 km</option>
-                <option value="10">10 km</option>
-                <option value="15">15 km</option>
-                <option value="20">20 km</option>
-                <option value="30">30 km</option>
-                <option value="40" selected>40 km</option>
-              </select>
-            </label>
-            <label>Score minimal
-              <span class="range-line"><input id="scoreFilter" type="range" min="0" max="80" step="5" value="0"><output id="scoreFilterValue">0/100</output></span>
-            </label>
-            <label>Type de peuplement
-              <select id="forestFilter">
-                <option value="all">Tous les peuplements</option>
-                <option value="broadleaf">Feuillus renseignés</option>
-                <option value="conifer">Conifères renseignés</option>
-              </select>
-            </label>
-            <button id="applyFiltersButton" class="primary full" type="button">Mettre à jour la carte</button>
-            <p id="filterSummary" class="microcopy">Toutes les mailles du rayon pilote sont affichées.</p>
-          </section>
-          <section id="tab-timing" class="sidebar-content" role="tabpanel">
-            <p id="timingIntro" class="microcopy">Prévision indicative fondée sur la pluie, la température et la saison.</p>
-            <div id="bestDays" class="best-days"><p class="muted">Chargement de la météo…</p></div>
-          </section>
-        </aside>
         <div class="map-toolbar">
           <button id="closeMapButton" class="map-close" type="button" aria-label="Quitter le plein écran">×</button>
           <div>
             <span class="map-label">Potentiel indicatif</span>
             <select id="mapSpecies" aria-label="Espèce affichée"></select>
           </div>
-          <button id="openSidebarButton" class="layer-button" type="button" aria-label="Ouvrir les filtres" title="Filtres">☰</button>
           <button id="toggleZonesButton" class="layer-button active" type="button" aria-pressed="true" title="Afficher ou masquer les zones">▱</button>
           <button id="toggleLidarButton" class="layer-button" type="button" aria-pressed="false" title="Relief IGN LiDAR HD à fort zoom">⌁</button>
         </div>
@@ -181,6 +144,6 @@
   </dialog>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=12"></script>
+  <script src="app.js?v=12.1"></script>
 </body>
 </html>
