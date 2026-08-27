@@ -48,6 +48,31 @@ button { cursor: pointer; }
 .hero h1 { margin: 2px 0 5px; font-family: Georgia, serif; font-size: clamp(2rem, 9vw, 3.5rem); }
 .hero p:last-child { max-width: 550px; margin: 0; color: rgba(255,255,255,.75); }
 
+.area-switcher-shell {
+  position: sticky;
+  z-index: 1400;
+  top: 0;
+  padding: 10px 14px 0;
+  background: linear-gradient(var(--cream) 72%, rgba(245,241,231,0));
+}
+.area-switcher {
+  display: grid;
+  grid-template-columns: minmax(150px, .8fr) minmax(220px, 1.4fr);
+  align-items: center;
+  gap: 12px;
+  width: min(892px, 100%);
+  margin: 0 auto;
+  padding: 10px 12px;
+  background: var(--paper);
+  border: 1px solid rgba(23,60,43,.2);
+  border-radius: 17px;
+  box-shadow: 0 9px 24px rgba(23,60,43,.15);
+}
+.area-switcher > span { display: grid; gap: 2px; }
+.area-switcher small { color: var(--muted); font-size: .64rem; font-weight: 850; letter-spacing: .09em; text-transform: uppercase; }
+.area-switcher strong { color: var(--forest); font-size: .86rem; }
+.area-switcher select { min-height: 47px; padding: 10px 38px 10px 12px; color: white; background-color: var(--forest-2); border-color: var(--forest-2); font-weight: 800; }
+
 .eyebrow {
   margin: 0;
   color: var(--gold);
@@ -87,6 +112,7 @@ h2 { margin: 4px 0 0; font-family: Georgia, serif; font-size: 1.35rem; }
 .growth-track i { display: block; width: 0; height: 100%; background: #8ea55b; border-radius: inherit; transition: width .35s ease, background .35s ease; }
 .growth-status { color: var(--forest); font-size: .86rem; }
 .growth-indicator .microcopy { margin: 0; }
+.growth-scope { margin: 0; padding-top: 7px; color: var(--forest-2); border-top: 1px solid rgba(36,93,66,.14); font-size: .7rem; font-weight: 750; line-height: 1.35; }
 .growth-indicator.level-low .growth-track i { background: #779385; }
 .growth-indicator.level-wait .growth-track i { background: #a7bd58; }
 .growth-indicator.level-possible .growth-track i { background: #d5a341; }
@@ -240,6 +266,9 @@ textarea { resize: vertical; }
 }
 
 @media (max-width: 520px) {
+  .area-switcher { grid-template-columns: 1fr; gap: 7px; }
+  .area-switcher > span { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .area-switcher strong { font-size: .76rem; }
   .map-panel { padding: 12px; }
   .map-panel .section-heading { align-items: flex-end; }
   .map-actions { display: grid; }

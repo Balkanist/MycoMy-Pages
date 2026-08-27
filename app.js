@@ -7,6 +7,14 @@ const SEARCH_AREAS = {
   porcelette: {
     id: "porcelette", name: "Porcelette", lat: 49.157222, lng: 6.656389, radius: 10, zoom: 12,
     forestFile: "bdforet57.json?v=2", hydroFile: "hydro57.json?v=1", observationsFile: "observations57.json?v=1"
+  },
+  chatel: {
+    id: "chatel", name: "Châtel-Saint-Germain", lat: 49.1297, lng: 6.0642, radius: 10, zoom: 12,
+    forestFile: "bdforet-chatel.json?v=1", hydroFile: "hydro-chatel.json?v=1", observationsFile: "observations-chatel.json?v=1"
+  },
+  hayange: {
+    id: "hayange", name: "Hayange", lat: 49.3340, lng: 6.0641, radius: 10, zoom: 12,
+    forestFile: "bdforet-hayange.json?v=1", hydroFile: "hydro-hayange.json?v=1", observationsFile: "observations-hayange.json?v=1"
   }
 };
 const STORAGE_KEY = "mycomy-spots-v1";
@@ -121,7 +129,10 @@ const species = [
 ];
 
 let selectedGroup = "Tous";
-let activeArea = SEARCH_AREAS.bruebach;
+let activeArea = (() => {
+  try { return SEARCH_AREAS[localStorage.getItem("mycomy-active-area")] || SEARCH_AREAS.bruebach; }
+  catch { return SEARCH_AREAS.bruebach; }
+})();
 let weatherPoints = weatherPointsFor(activeArea);
 let pendingPosition = { lat: activeArea.lat, lng: activeArea.lng };
 let map;
@@ -132,6 +143,7 @@ let forestLayer;
 let hydroLayer;
 let lidarLayer;
 let forestFeatures = [];
+let renderedFeatures = [];
 let zonesVisible = true;
 let lidarVisible = false;
 let weatherPotential = 35;
@@ -215,6 +227,7 @@ function initMap() {
         renderForestZones();
         requestAnimationFrame(() => map.invalidateSize({ pan: false }));
       }
+      renderSpatialWeatherIndicators();
     }, 220);
   });
 }
@@ -546,24 +559,114 @@ async function enrichFineTerrain(features) {
   if (token === terrainRequestToken && map.getZoom() >= FINE_ZOOM) renderForestZones({ skipTerrainFetch: true });
 }
 
-function localWeatherPotential(feature) {
-  if (!weatherNodes.length) return weatherPotential;
-  const center = featureCenter(feature);
-  const nearest = weatherNodes
+function nearestWeatherNodes(lat, lng) {
+  const longitudeScale = Math.cos(activeArea.lat * Math.PI / 180);
+  return weatherNodes
     .map(node => ({
-      potential: node.potential,
-      distanceSquared: (center.lat - node.lat) ** 2 + ((center.lng - node.lng) * .68) ** 2
+      node,
+      distanceSquared: (lat - node.lat) ** 2 + ((lng - node.lng) * longitudeScale) ** 2
     }))
     .sort((a, b) => a.distanceSquared - b.distanceSquared)
-    .slice(0, 4);
-  if (nearest[0].distanceSquared < 1e-10) return nearest[0].potential;
-  // Interpolation IDW adoucie : les quatre points voisins contribuent au lieu
-  // de créer une frontière droite au changement de station la plus proche.
-  const weighted = nearest.reduce((result, node) => {
-    const weight = 1 / (node.distanceSquared + .0004);
-    return { sum: result.sum + node.potential * weight, weights: result.weights + weight };
+    .slice(0, 4)
+    .map(item => ({ ...item, weight: 1 / (item.distanceSquared + .0004) }));
+}
+
+function interpolatedWeatherValue(lat, lng, selector, fallback = 0) {
+  if (!weatherNodes.length) return fallback;
+  const nearest = nearestWeatherNodes(lat, lng);
+  const exact = nearest.find(item => item.distanceSquared < 1e-10);
+  if (exact) return Number(selector(exact.node)) || fallback;
+  const weighted = nearest.reduce((result, item) => {
+    const value = Number(selector(item.node));
+    if (!Number.isFinite(value)) return result;
+    return { sum: result.sum + value * item.weight, weights: result.weights + item.weight };
   }, { sum: 0, weights: 0 });
-  return weighted.sum / weighted.weights;
+  return weighted.weights ? weighted.sum / weighted.weights : fallback;
+}
+
+function localWeatherPotential(feature) {
+  const center = featureCenter(feature);
+  return interpolatedWeatherValue(center.lat, center.lng, node => node.potential, weatherPotential);
+}
+
+function visibleWeatherLocations(maxSamples = 160) {
+  if (!map) return { locations: [{ lat: activeArea.lat, lng: activeArea.lng }], total: 1, fallback: true };
+  const bounds = map.getBounds();
+  const visible = renderedFeatures
+    .map(featureCenter)
+    .filter(center => bounds.contains([center.lat, center.lng]));
+  if (!visible.length) {
+    const center = map.getCenter();
+    return { locations: [{ lat: center.lat, lng: center.lng }], total: 0, fallback: true };
+  }
+  const step = Math.max(1, Math.ceil(visible.length / maxSamples));
+  return { locations: visible.filter((_, index) => index % step === 0), total: visible.length, fallback: false };
+}
+
+function viewExtentLabel(sample) {
+  if (!map || sample.fallback) return "au centre de la carte";
+  const bounds = map.getBounds();
+  const center = map.getCenter();
+  const width = distanceKm({ lat: center.lat, lng: bounds.getWest() }, { lat: center.lat, lng: bounds.getEast() });
+  const height = distanceKm({ lat: bounds.getSouth(), lng: center.lng }, { lat: bounds.getNorth(), lng: center.lng });
+  return `${sample.total} maille${sample.total > 1 ? "s" : ""} visible${sample.total > 1 ? "s" : ""} · emprise ~${Math.max(.1, width).toFixed(width < 10 ? 1 : 0)} × ${Math.max(.1, height).toFixed(height < 10 ? 1 : 0)} km`;
+}
+
+function weatherSummaryForView() {
+  if (!weatherNodes.length) return null;
+  const sample = visibleWeatherLocations();
+  const values = sample.locations.map(location => ({
+    potential: interpolatedWeatherValue(location.lat, location.lng, node => node.potential, weatherPotential),
+    rain: interpolatedWeatherValue(location.lat, location.lng, node => node.rain, centerWeatherModel?.rain || 0),
+    balance: interpolatedWeatherValue(location.lat, location.lng, node => node.balance, centerWeatherModel?.balance || 0),
+    moisture: interpolatedWeatherValue(location.lat, location.lng, node => node.moisture, centerWeatherModel?.moisture || 0),
+    soilTemperature: interpolatedWeatherValue(location.lat, location.lng, node => node.soilTemperature, centerWeatherModel?.soilTemperature || 0)
+  }));
+  const average = key => values.reduce((sum, value) => sum + value[key], 0) / values.length;
+  return { sample, potential: average("potential"), rain: average("rain"), balance: average("balance"), moisture: average("moisture"), soilTemperature: average("soilTemperature") };
+}
+
+function growthAtLocation(item, location) {
+  const nearest = nearestWeatherNodes(location.lat, location.lng)
+    .map(entry => ({ ...entry, growth: growthModelFor(item, entry.node) }))
+    .filter(entry => entry.growth);
+  if (!nearest.length) return null;
+  const average = selector => {
+    const weighted = nearest.reduce((result, entry) => ({
+      sum: result.sum + Number(selector(entry)) * entry.weight,
+      weights: result.weights + entry.weight
+    }), { sum: 0, weights: 0 });
+    return weighted.sum / weighted.weights;
+  };
+  return {
+    score: average(entry => entry.growth.score),
+    rain: average(entry => entry.growth.rain),
+    balance: average(entry => entry.growth.balance),
+    moisture: average(entry => entry.node.moisture),
+    soilTemperature: average(entry => entry.node.soilTemperature),
+    daysSinceRain: average(entry => entry.growth.daysSinceRain ?? 21),
+    profile: nearest[0].growth.profile
+  };
+}
+
+function growthSummaryForView(item) {
+  if (!item || !weatherNodes.length) return null;
+  const sample = visibleWeatherLocations();
+  const values = sample.locations.map(location => growthAtLocation(item, location)).filter(Boolean);
+  if (!values.length) return null;
+  const average = key => values.reduce((sum, value) => sum + value[key], 0) / values.length;
+  return {
+    sample,
+    score: Math.round(average("score")),
+    minScore: Math.round(Math.min(...values.map(value => value.score))),
+    maxScore: Math.round(Math.max(...values.map(value => value.score))),
+    rain: average("rain"),
+    balance: average("balance"),
+    moisture: average("moisture"),
+    soilTemperature: average("soilTemperature"),
+    daysSinceRain: Math.round(average("daysSinceRain")),
+    profile: values[0].profile
+  };
 }
 
 function observationBoost(feature, speciesId = selectedMapSpecies) {
@@ -650,6 +753,7 @@ function renderForestZones({ skipTerrainFetch = false } = {}) {
     featureScore(feature) >= advancedFilters.minScore &&
     matchesForestFilter(feature)
   );
+  renderedFeatures = visibleFeatures;
   forestLayer = L.geoJSON({ type: "FeatureCollection", features: visibleFeatures }, {
     style: zoneStyle,
     onEachFeature: (feature, layer) => {
@@ -703,6 +807,7 @@ function renderForestZones({ skipTerrainFetch = false } = {}) {
     : "Aucune donnée forestière";
   const summary = document.querySelector("#filterSummary");
   if (summary) summary.textContent = `${visibleFeatures.length} mailles ciblées · rayon ${advancedFilters.radius} km · score ≥ ${advancedFilters.minScore}${historicalCount ? ` · ${historicalCount} observations publiques agrégées` : ""}.`;
+  renderSpatialWeatherIndicators();
 }
 
 async function loadHydrography() {
@@ -998,7 +1103,7 @@ function growthLevel(score) {
 
 function renderGrowthIndicator() {
   const item = species.find(entry => entry.id === selectedMapSpecies);
-  const model = growthModelFor(item);
+  const model = growthSummaryForView(item);
   if (!item || !model) return;
   const indicator = document.querySelector("#growthIndicator");
   const level = growthLevel(model.score);
@@ -1007,8 +1112,21 @@ function renderGrowthIndicator() {
   document.querySelector("#growthValue").textContent = `${model.score}/100`;
   document.querySelector("#growthBar").style.width = `${model.score}%`;
   document.querySelector("#growthStatus").textContent = level.label;
-  const rainAge = model.daysSinceRain == null ? `aucune pluie ≥ ${model.profile.triggerRain} mm depuis 21 j` : `dernière pluie ≥ ${model.profile.triggerRain} mm il y a ${model.daysSinceRain} j`;
-  document.querySelector("#growthExplanation").textContent = `${model.rain.toFixed(1)} mm/${model.profile.rainDays} j · bilan ${model.balance >= 0 ? "+" : ""}${model.balance.toFixed(1)} mm · sol ${(centerWeatherModel.moisture * 100).toFixed(0)} % et ${centerWeatherModel.soilTemperature.toFixed(1)} °C · ${rainAge}.`;
+  const rainAge = model.daysSinceRain >= 21 ? `aucune pluie ≥ ${model.profile.triggerRain} mm depuis 21 j` : `dernière pluie ≥ ${model.profile.triggerRain} mm il y a ~${model.daysSinceRain} j`;
+  document.querySelector("#growthExplanation").textContent = `${model.rain.toFixed(1)} mm/${model.profile.rainDays} j · bilan ${model.balance >= 0 ? "+" : ""}${model.balance.toFixed(1)} mm · sol ${(model.moisture * 100).toFixed(0)} % et ${model.soilTemperature.toFixed(1)} °C · ${rainAge}.`;
+  document.querySelector("#growthScope").textContent = `Vue cartographique · ${viewExtentLabel(model.sample)} · plage ${model.minScore}–${model.maxScore}/100`;
+}
+
+function renderWeatherOverview() {
+  const model = weatherSummaryForView();
+  if (!model) return;
+  document.querySelector("#weatherScore").textContent = `${Math.round(model.potential)}/100`;
+  document.querySelector("#weatherDetails").textContent = `${viewExtentLabel(model.sample)} · ${model.rain.toFixed(1)} mm/21 j · bilan hydrique ${model.balance >= 0 ? "+" : ""}${model.balance.toFixed(1)} mm · humidité du sol ${(model.moisture * 100).toFixed(0)} % · sol ${model.soilTemperature.toFixed(1)} °C.`;
+}
+
+function renderSpatialWeatherIndicators() {
+  renderWeatherOverview();
+  renderGrowthIndicator();
 }
 
 async function loadWeather() {
@@ -1068,15 +1186,13 @@ async function loadWeather() {
     if (loadToken !== areaLoadToken) return;
     const centerModel = models[0];
     centerWeatherModel = centerModel;
-    weatherNodes = models.map(({ lat, lng, name, potential }) => ({ lat, lng, name, potential }));
+    weatherNodes = models;
     weatherSeries = centerModel.data.daily;
     weatherHistoryDays = centerModel.historyDays;
     weatherPotential = centerModel.potential;
-    score.textContent = `${weatherPotential}/100`;
-    details.textContent = `${centerModel.rain.toFixed(1)} mm/21 j · bilan hydrique ${centerModel.balance >= 0 ? "+" : ""}${centerModel.balance.toFixed(1)} mm · humidité du sol ${(centerModel.moisture * 100).toFixed(0)} % · sol ${centerModel.soilTemperature.toFixed(1)} °C.`;
+    renderSpatialWeatherIndicators();
     if (forestFeatures.length) renderForestZones();
     renderBestDays();
-    renderGrowthIndicator();
   } catch {
     if (loadToken !== areaLoadToken) return;
     centerWeatherModel = null;
@@ -1088,6 +1204,7 @@ async function loadWeather() {
     document.querySelector("#growthBar").style.width = "0%";
     document.querySelector("#growthStatus").textContent = "Données météo indisponibles";
     document.querySelector("#growthExplanation").textContent = "L'indicateur sera recalculé à la prochaine connexion.";
+    document.querySelector("#growthScope").textContent = "Vue cartographique indisponible hors connexion";
   }
 }
 
@@ -1195,7 +1312,8 @@ function updateAreaControls() {
   radiusInput.innerHTML = distances.map(value => `<option value="${value}" ${value === activeArea.radius ? "selected" : ""}>${value} km</option>`).join("");
   document.querySelector("#radiusFilterLabel").firstChild.textContent = `Distance autour de ${activeArea.name}`;
   document.querySelector("#areaTitle").textContent = `Autour de ${activeArea.name}`;
-  document.querySelector("#weatherTitle").textContent = `Indice météo local · ${activeArea.name}`;
+  document.querySelector("#weatherTitle").textContent = `Indice météo spatialisé · ${activeArea.name}`;
+  document.querySelector("#areaChoiceLabel").textContent = `${activeArea.name} · ${activeArea.radius} km`;
   document.querySelector("#areaSelect").value = activeArea.id;
 }
 
@@ -1205,6 +1323,7 @@ function switchArea(areaId) {
   areaLoadToken++;
   terrainRequestToken++;
   activeArea = nextArea;
+  try { localStorage.setItem("mycomy-active-area", activeArea.id); } catch { /* préférence facultative */ }
   weatherPoints = weatherPointsFor(activeArea);
   pendingPosition = { lat: activeArea.lat, lng: activeArea.lng };
   advancedFilters = { ...advancedFilters, radius: activeArea.radius };
@@ -1216,6 +1335,7 @@ function switchArea(areaId) {
   candidateContextState = "idle";
   contextIndexByFeature = new WeakMap();
   forestFeatures = [];
+  renderedFeatures = [];
   weatherNodes = [];
   weatherSeries = null;
   centerWeatherModel = null;
@@ -1309,7 +1429,7 @@ async function prepareServiceWorker() {
   if (!("serviceWorker" in navigator) || location.protocol === "file:") return;
   try {
     const previousController = navigator.serviceWorker.controller;
-    const registration = await navigator.serviceWorker.register("sw.js?v=11.2", { updateViaCache: "none" });
+    const registration = await navigator.serviceWorker.register("sw.js?v=12", { updateViaCache: "none" });
     await registration.update();
     if (previousController && navigator.serviceWorker.controller === previousController) {
       await Promise.race([

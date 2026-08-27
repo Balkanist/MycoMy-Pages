@@ -1,7 +1,7 @@
-const CACHE = "mycomy-v11-2";
+const CACHE = "mycomy-v12";
 // Les gros fichiers géographiques ne sont plus préchargés : sur iPhone, deux
 // téléchargements concurrents de la zone Bruebach pouvaient saturer Safari.
-const APP_SHELL = ["./", "./index.html", "./styles.css?v=8", "./app.js?v=11.2", "./manifest.webmanifest"];
+const APP_SHELL = ["./", "./index.html", "./styles.css?v=12", "./app.js?v=12", "./manifest.webmanifest"];
 
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(APP_SHELL)));
@@ -16,7 +16,7 @@ self.addEventListener("activate", event => {
 self.addEventListener("fetch", event => {
   if (event.request.method !== "GET") return;
   const path = new URL(event.request.url).pathname;
-  if (/\/(?:bdforet|hydro|observations|context)\d+\.json$/.test(path)) {
+  if (/\/(?:bdforet|hydro|observations|context)[^/]*\.json$/.test(path)) {
     event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
     return;
   }

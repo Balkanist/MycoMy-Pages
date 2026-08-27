@@ -37,11 +37,17 @@ jobs:
             manifest.webmanifest \
             bdforet57.json \
             bdforet68.json \
+            bdforet-chatel.json \
+            bdforet-hayange.json \
             context68.json \
             hydro57.json \
             hydro68.json \
+            hydro-chatel.json \
+            hydro-hayange.json \
             observations57.json \
             observations68.json \
+            observations-chatel.json \
+            observations-hayange.json \
             _site/
           touch _site/.nojekyll
 

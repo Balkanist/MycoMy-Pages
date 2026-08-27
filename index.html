@@ -10,7 +10,7 @@
   <title>MycoMy</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=8">
+  <link rel="stylesheet" href="styles.css?v=12">
 </head>
 <body>
   <header class="hero">
@@ -21,6 +21,18 @@
     </div>
     <button id="locateButton" class="round-button" type="button" aria-label="Afficher ma position">⌖</button>
   </header>
+
+  <div class="area-switcher-shell">
+    <label class="area-switcher" for="areaSelect">
+      <span><small>Zone d’exploration</small><strong id="areaChoiceLabel">Bruebach · 40 km</strong></span>
+      <select id="areaSelect" aria-label="Choisir la zone d’exploration">
+        <option value="bruebach" selected>Bruebach · rayon 40 km</option>
+        <option value="porcelette">Porcelette · rayon 10 km</option>
+        <option value="chatel">Châtel-Saint-Germain · rayon 10 km</option>
+        <option value="hayange">Hayange · rayon 10 km</option>
+      </select>
+    </label>
+  </div>
 
   <main>
     <section class="weather-card" aria-labelledby="weatherTitle">
@@ -38,14 +50,15 @@
         <div class="growth-track" aria-hidden="true"><i id="growthBar"></i></div>
         <strong id="growthStatus" class="growth-status">Calcul des conditions en cours</strong>
         <p id="growthExplanation" class="microcopy">Pluie, bilan hydrique, humidité et température du sol.</p>
+        <p id="growthScope" class="growth-scope">Vue cartographique en cours d’analyse…</p>
       </div>
-      <p class="microcopy">Cet indice décrit uniquement la météo. Il ne confirme ni la présence ni la comestibilité d’un champignon.</p>
+      <p class="microcopy">Les deux indices suivent l’emprise visible de la carte et sont recalculés après un zoom ou un déplacement. Ils ne confirment ni la présence ni la comestibilité d’un champignon.</p>
     </section>
 
     <section class="panel map-panel" aria-labelledby="mapTitle">
       <div class="section-heading">
         <div>
-          <p class="eyebrow">Modèle MycoMy v11 · analyse fine en cascade jusqu’à ~75–85 m</p>
+          <p class="eyebrow">Modèle MycoMy v12 · météo spatialisée et analyse fine jusqu’à ~75–85 m</p>
           <h2 id="mapTitle">Carte personnelle</h2>
         </div>
         <div class="map-actions">
@@ -69,12 +82,6 @@
             <div id="sidebarSpecies" class="sidebar-species"></div>
           </section>
           <section id="tab-advanced" class="sidebar-content" role="tabpanel">
-            <label>Zone de recherche
-              <select id="areaSelect">
-                <option value="bruebach" selected>Bruebach · rayon maximal 40 km</option>
-                <option value="porcelette">Porcelette · rayon maximal 10 km</option>
-              </select>
-            </label>
             <label id="radiusFilterLabel">Distance autour de Bruebach
               <select id="radiusFilter">
                 <option value="5">5 km</option>
@@ -174,6 +181,6 @@
   </dialog>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=11.2"></script>
+  <script src="app.js?v=12"></script>
 </body>
 </html>
