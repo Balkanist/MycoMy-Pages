@@ -1,12 +1,11 @@
-const CACHE = "mycomy-v12-4";
+const CACHE = "mycomy-v12-5";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=12.4",
-  "./compat-v12.4.js?v=12.4",
-  "./app.js?v=12.4",
-  "./weather-v12.4.js?v=12.4",
-  "./manifest.webmanifest?v=12.4"
+  "./styles.css?v=12.5",
+  "./app.js?v=12.5",
+  "./runtime-v12.5.js?v=12.5",
+  "./manifest.webmanifest?v=12.5"
 ];
 
 self.addEventListener("install", event => {
@@ -23,42 +22,36 @@ self.addEventListener("activate", event => {
   self.clients.claim();
 });
 
-function safariSafeWeatherRequest(request) {
-  const url = new URL(request.url);
-  const forecastDays = Number(url.searchParams.get("forecast_days") || 0);
-  if (url.searchParams.get("models") === "meteofrance_seamless" && forecastDays > 4) {
-    url.searchParams.delete("models");
-  }
-  url.searchParams.set("mycomy_sw", `12.4-${Date.now()}`);
-  return fetch(url.toString(), { cache: "no-store" });
-}
-
 self.addEventListener("fetch", event => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
   const path = url.pathname;
 
+  // Données météo : toujours le réseau, sans modifier l'URL Open-Meteo.
   if (url.hostname === "api.open-meteo.com") {
-    event.respondWith(safariSafeWeatherRequest(event.request));
+    event.respondWith(fetch(event.request, { cache: "no-store" }));
     return;
   }
 
-  // Les ressources externes ne sont pas mises en cache par MycoMy.
+  // Les autres ressources externes ne sont jamais gérées par le cache MycoMy.
   if (url.origin !== self.location.origin) return;
 
+  // Les gros jeux de données et leurs blocs restent network-first. Ils ne sont
+  // pas ajoutés au Cache Storage de Safari pour éviter les quotas/mises en mémoire.
+  if (path.includes("/forest68/") || /\/(?:bdforet|hydro|observations|context)[^/]*\.json$/.test(path)) {
+    event.respondWith(fetch(event.request, { cache: "no-store" }));
+    return;
+  }
+
+  // Les navigations prennent toujours la version publiée en priorité.
   if (event.request.mode === "navigate") {
     event.respondWith(
-      fetch(event.request).then(response => {
+      fetch(event.request, { cache: "no-store" }).then(response => {
         const copy = response.clone();
         caches.open(CACHE).then(cache => cache.put("./index.html", copy));
         return response;
       }).catch(() => caches.match("./index.html"))
     );
-    return;
-  }
-
-  if (/\/(?:bdforet|hydro|observations|context)[^/]*\.json$/.test(path)) {
-    event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
     return;
   }
 
