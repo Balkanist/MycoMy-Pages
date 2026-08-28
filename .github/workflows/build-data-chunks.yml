@@ -1,0 +1,77 @@
+name: Build Safari-friendly forest chunks
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - bdforet68.json
+      - .github/workflows/build-data-chunks.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Split the large Bruebach forest dataset
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          source = Path('bdforet68.json')
+          target = Path('forest68')
+          target.mkdir(exist_ok=True)
+
+          with source.open('r', encoding='utf-8') as handle:
+              data = json.load(handle)
+
+          features = data.get('features') or []
+          chunk_count = 12
+          chunk_size = max(1, (len(features) + chunk_count - 1) // chunk_count)
+          chunks = []
+
+          for old in target.glob('chunk-*.json'):
+              old.unlink()
+
+          for number, start in enumerate(range(0, len(features), chunk_size)):
+              part = features[start:start + chunk_size]
+              filename = f'chunk-{number:02d}.json'
+              payload = {'type': 'FeatureCollection', 'features': part}
+              with (target / filename).open('w', encoding='utf-8') as handle:
+                  json.dump(payload, handle, ensure_ascii=False, separators=(',', ':'))
+              chunks.append({'file': filename, 'count': len(part)})
+
+          index = {
+              'version': '12.5',
+              'type': 'FeatureCollectionChunks',
+              'featureCount': len(features),
+              'metadata': data.get('metadata') or {},
+              'rpp_profiles': data.get('rpp_profiles') or [],
+              'chunks': chunks,
+          }
+          with (target / 'index.json').open('w', encoding='utf-8') as handle:
+              json.dump(index, handle, ensure_ascii=False, separators=(',', ':'))
+
+          print(f'{len(features)} features -> {len(chunks)} chunks')
+          PY
+
+      - name: Commit generated chunks
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add forest68
+          if git diff --cached --quiet; then
+            echo "Chunks already up to date."
+          else
+            git commit -m "Build Safari-friendly forest chunks"
+            git push
+          fi
