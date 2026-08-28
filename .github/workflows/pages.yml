@@ -25,6 +25,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Validate JavaScript and generated forest data
+        shell: bash
+        run: |
+          node --check app.js
+          node --check runtime-v12.5.js
+          test -s forest68/index.json
+          test "$(find forest68 -maxdepth 1 -name 'chunk-*.json' | wc -l)" -ge 10
+
       - name: Prepare static site
         shell: bash
         run: |
