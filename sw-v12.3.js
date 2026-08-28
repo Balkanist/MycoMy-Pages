@@ -31,17 +31,17 @@ function hasDaily(dataset) {
   return Boolean(dataset?.daily?.time && Array.isArray(dataset.daily.time));
 }
 
-function mergeDailyHistory(meteoFrance, bestMatch, today) {
-  if (!hasDaily(meteoFrance) || !hasDaily(bestMatch)) return bestMatch;
-  const result = { ...bestMatch, daily: { ...bestMatch.daily } };
-  const mfIndex = new Map(meteoFrance.daily.time.map((date, index) => [date, index]));
+function mergeDailyHistory(mfData, bestData, today) {
+  if (!hasDaily(mfData) || !hasDaily(bestData)) return bestData;
+  const result = { ...bestData, daily: { ...bestData.daily } };
+  const mfIndex = new Map(mfData.daily.time.map((date, index) => [date, index]));
 
-  for (const [field, values] of Object.entries(bestMatch.daily)) {
+  for (const [field, values] of Object.entries(bestData.daily)) {
     if (field === "time" || !Array.isArray(values)) continue;
-    const mfValues = meteofranceDailyField(meteoFrance, field);
+    const mfValues = mfData.daily?.[field];
     if (!Array.isArray(mfValues)) continue;
     result.daily[field] = values.map((value, index) => {
-      const date = bestMatch.daily.time[index];
+      const date = bestData.daily.time[index];
       if (!date || date >= today) return value;
       const mfPosition = mfIndex.get(date);
       if (mfPosition === undefined) return value;
@@ -52,16 +52,12 @@ function mergeDailyHistory(meteoFrance, bestMatch, today) {
   return result;
 }
 
-function meteofranceDailyField(dataset, field) {
-  return dataset?.daily?.[field];
-}
-
-function mergePayloads(meteoFrancePayload, bestMatchPayload) {
+function mergePayloads(mfPayload, bestPayload) {
   const today = parisDate();
-  const mfSets = Array.isArray(meteoFrancePayload) ? meteofrancePayload : [meteofrancePayload];
-  const bestSets = Array.isArray(bestMatchPayload) ? bestMatchPayload : [bestMatchPayload];
-  const merged = bestSets.map((bestSet, index) => mergeDailyHistory(mfSets[index], bestSet, today));
-  return Array.isArray(bestMatchPayload) ? merged : merged[0];
+  const mfSets = Array.isArray(mfPayload) ? mfPayload : [mfPayload];
+  const bestSets = Array.isArray(bestPayload) ? bestPayload : [bestPayload];
+  const merged = bestSets.map((bestData, index) => mergeDailyHistory(mfSets[index], bestData, today));
+  return Array.isArray(bestPayload) ? merged : merged[0];
 }
 
 async function fetchFresh(requestOrUrl) {
