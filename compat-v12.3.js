@@ -10,18 +10,17 @@
     return Boolean(dataset?.daily?.time && Array.isArray(dataset.daily.time));
   }
 
-  function mergeDailyHistory(meteoFrance, bestMatch, today) {
-    if (!hasDaily(meteoFrance) || !hasDaily(bestMatch)) return bestMatch;
-    const result = { ...bestMatch, daily: { ...bestMatch.daily } };
-    const mfIndex = new Map(meteoFrance.daily.time.map((date, index) => [date, index]));
-    const bestDates = bestMatch.daily.time;
+  function mergeDailyHistory(mfData, bestData, today) {
+    if (!hasDaily(mfData) || !hasDaily(bestData)) return bestData;
+    const result = { ...bestData, daily: { ...bestData.daily } };
+    const mfIndex = new Map(mfData.daily.time.map((date, index) => [date, index]));
 
-    for (const [field, values] of Object.entries(bestMatch.daily)) {
+    for (const [field, values] of Object.entries(bestData.daily)) {
       if (field === "time" || !Array.isArray(values)) continue;
-      const mfValues = meteofranceDailyField(meteoFrance, field);
+      const mfValues = mfData.daily?.[field];
       if (!Array.isArray(mfValues)) continue;
       result.daily[field] = values.map((value, index) => {
-        const date = bestDates[index];
+        const date = bestData.daily.time[index];
         if (!date || date >= today) return value;
         const mfPosition = mfIndex.get(date);
         if (mfPosition === undefined) return value;
@@ -32,25 +31,17 @@
     return result;
   }
 
-  function meteofranceDailyField(dataset, field) {
-    return dataset?.daily?.[field];
-  }
-
-  function mergePayloads(meteoFrancePayload, bestMatchPayload) {
+  function mergePayloads(mfPayload, bestPayload) {
     const today = parisDate();
-    const mfSets = Array.isArray(meteoFrancePayload) ? meteofrancePayloadSafe(meteoFrancePayload) : [meteofrancePayloadSafe(meteoFrancePayload)];
-    const bestSets = Array.isArray(bestMatchPayload) ? bestMatchPayload : [bestMatchPayload];
-    const merged = bestSets.map((bestSet, index) => mergeDailyHistory(mfSets[index], bestSet, today));
-    return Array.isArray(bestMatchPayload) ? merged : merged[0];
+    const mfSets = Array.isArray(mfPayload) ? mfPayload : [mfPayload];
+    const bestSets = Array.isArray(bestPayload) ? bestPayload : [bestPayload];
+    const merged = bestSets.map((bestData, index) => mergeDailyHistory(mfSets[index], bestData, today));
+    return Array.isArray(bestPayload) ? merged : merged[0];
   }
 
-  function meteofrancePayloadSafe(payload) {
-    return payload;
-  }
-
-  // Safari pouvait conserver la réponse Météo-France à horizon court dans un
-  // ancien Service Worker. On intercepte ici la requête météo AVANT app.js :
-  // historique = Météo-France, aujourd'hui + J+7 = Open-Meteo Best Match.
+  // Safari pouvait conserver une réponse météo à horizon court dans un ancien
+  // Service Worker. Cette interception s'installe AVANT app.js : historique
+  // Météo-France, puis aujourd'hui + J+7 via Open-Meteo Best Match.
   window.fetch = async function mycoFetch(input, init) {
     let url;
     try {
@@ -102,7 +93,7 @@
   };
 
   // app.js v12.1 enregistrait encore sw.js?v=12.1. On redirige cet appel vers
-  // un nom de fichier neuf afin que Safari ne puisse pas réutiliser l'ancien SW.
+  // un fichier neuf afin que Safari soit obligé de remplacer l'ancien SW.
   if ("serviceWorker" in navigator) {
     const container = navigator.serviceWorker;
     const nativeRegister = container.register.bind(container);
@@ -121,7 +112,7 @@
         value: registerV123
       });
     } catch {
-      try { container.register = registerV123; } catch { /* Safari ancien : l'enregistrement anticipé ci-dessous suffit */ }
+      try { container.register = registerV123; } catch { /* l'enregistrement anticipé ci-dessous reste suffisant */ }
     }
 
     nativeRegister(`sw-v12.3.js?v=${VERSION}`, { updateViaCache: "none" })
