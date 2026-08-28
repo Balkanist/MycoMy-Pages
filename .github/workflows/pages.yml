@@ -29,26 +29,11 @@ jobs:
         shell: bash
         run: |
           mkdir -p _site
-          cp \
-            index.html \
-            styles.css \
-            app.js \
-            sw.js \
-            manifest.webmanifest \
-            bdforet57.json \
-            bdforet68.json \
-            bdforet-chatel.json \
-            bdforet-hayange.json \
-            context68.json \
-            hydro57.json \
-            hydro68.json \
-            hydro-chatel.json \
-            hydro-hayange.json \
-            observations57.json \
-            observations68.json \
-            observations-chatel.json \
-            observations-hayange.json \
-            _site/
+          rsync -a \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='_site/' \
+            ./ _site/
           touch _site/.nojekyll
 
       - name: Configure GitHub Pages
