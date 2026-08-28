@@ -6,8 +6,12 @@
     return new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Paris" }).format(new Date());
   }
 
+  function hasDaily(dataset) {
+    return Boolean(dataset?.daily?.time && Array.isArray(dataset.daily.time));
+  }
+
   function mergeDailyHistory(meteoFrance, bestMatch, today) {
-    if (!meteofranceHasDaily(meteoFrance) || !meteofranceHasDaily(bestMatch)) return bestMatch;
+    if (!hasDaily(meteoFrance) || !hasDaily(bestMatch)) return bestMatch;
     const result = { ...bestMatch, daily: { ...bestMatch.daily } };
     const mfIndex = new Map(meteoFrance.daily.time.map((date, index) => [date, index]));
     const bestDates = bestMatch.daily.time;
@@ -28,20 +32,20 @@
     return result;
   }
 
-  function meteofranceHasDaily(dataset) {
-    return Boolean(dataset?.daily?.time && Array.isArray(dataset.daily.time));
-  }
-
   function meteofranceDailyField(dataset, field) {
     return dataset?.daily?.[field];
   }
 
   function mergePayloads(meteoFrancePayload, bestMatchPayload) {
     const today = parisDate();
-    const mfSets = Array.isArray(meteoFrancePayload) ? meteofrancePayload : [meteofrancePayload];
+    const mfSets = Array.isArray(meteoFrancePayload) ? meteofrancePayloadSafe(meteoFrancePayload) : [meteofrancePayloadSafe(meteoFrancePayload)];
     const bestSets = Array.isArray(bestMatchPayload) ? bestMatchPayload : [bestMatchPayload];
     const merged = bestSets.map((bestSet, index) => mergeDailyHistory(mfSets[index], bestSet, today));
     return Array.isArray(bestMatchPayload) ? merged : merged[0];
+  }
+
+  function meteofrancePayloadSafe(payload) {
+    return payload;
   }
 
   // Safari pouvait conserver la réponse Météo-France à horizon court dans un
@@ -58,8 +62,7 @@
 
     if (url.hostname !== "api.open-meteo.com") return nativeFetch(input, init);
 
-    const cacheBust = `${VERSION}-${Date.now()}`;
-    url.searchParams.set("mycomy_cb", cacheBust);
+    url.searchParams.set("mycomy_cb", `${VERSION}-${Date.now()}`);
     const requestInit = { ...(init || {}), cache: "no-store" };
     const model = url.searchParams.get("models");
     const forecastDays = Number(url.searchParams.get("forecast_days") || 0);
