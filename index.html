@@ -8,9 +8,9 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="MycoMy">
   <title>MycoMy</title>
-  <link rel="manifest" href="manifest.webmanifest?v=12.3">
+  <link rel="manifest" href="manifest.webmanifest?v=12.4">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=12.3">
+  <link rel="stylesheet" href="styles.css?v=12.4">
 </head>
 <body>
   <header class="hero">
@@ -37,7 +37,7 @@
   <main>
     <section class="weather-card" aria-labelledby="weatherTitle">
       <div>
-      <p class="eyebrow">Météo‑France · bilan hydrique sur 21 jours</p>
+      <p class="eyebrow">Open‑Meteo · Best Match · bilan hydrique sur 21 jours</p>
         <h2 id="weatherTitle">Indice météo local</h2>
       </div>
       <div id="weatherScore" class="score" aria-live="polite">—</div>
@@ -65,7 +65,7 @@
     <section class="panel map-panel" aria-labelledby="mapTitle">
       <div class="section-heading">
         <div>
-          <p class="eyebrow">Modèle MycoMy v12.3 · météo spatialisée et analyse fine jusqu’à ~75–85 m</p>
+          <p class="eyebrow">Modèle MycoMy v12.4 · météo spatialisée et analyse fine jusqu’à ~75–85 m</p>
           <h2 id="mapTitle">Carte personnelle</h2>
         </div>
         <div class="map-actions">
@@ -93,7 +93,7 @@
           <strong id="zoneStatus">Chargement des forêts…</strong>
         </div>
       </div>
-      <p class="microcopy">Modèle multi-critères explicable : peuplements et hydrographie IGN, relief RGE ALTI/LiDAR, géologie BRGM, pH SoilGrids, sols GIS Sol/INRAE, probabilités d’essences JRC/FISE, météo Météo-France et observations GBIF agrégées. À partir du zoom 15, les mailles ayant un score initial d’au moins 60/100, leurs voisines proches et les secteurs observés sont affinés à ~75–85 m. Les autres restent visibles avec leur score initial. Vos marqueurs restent dans ce navigateur.</p>
+      <p class="microcopy">Modèle multi-critères explicable : peuplements et hydrographie IGN, relief RGE ALTI/LiDAR, géologie BRGM, pH SoilGrids, sols GIS Sol/INRAE, probabilités d’essences JRC/FISE, météo Open‑Meteo Best Match et observations GBIF agrégées. À partir du zoom 15, les mailles ayant un score initial d’au moins 60/100, leurs voisines proches et les secteurs observés sont affinés à ~75–85 m. Les autres restent visibles avec leur score initial. Vos marqueurs restent dans ce navigateur.</p>
       <div class="data-sources" aria-label="Données intégrées">
         <span>🌳 Peuplements IGN</span><span>🌲 Essences RPP JRC</span><span>🧪 pH SoilGrids</span><span>🪨 Géologie BRGM 1:50 000</span><span>⛰ Relief/LiDAR IGN</span><span>💧 Hydrographie IGN</span><span>💦 Zones humides CIGAL</span><span>🌱 Sols GIS Sol/INRAE</span><span>🕰 Forêt ancienne</span><span>📍 GBIF agrégé</span>
       </div>
@@ -144,8 +144,8 @@
   </dialog>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="compat-v12.3.js?v=12.3"></script>
-  <script src="app.js?v=12.3"></script>
-  <script src="weather-v12.2.js?v=12.3"></script>
+  <script src="compat-v12.4.js?v=12.4"></script>
+  <script src="app.js?v=12.4"></script>
+  <script src="weather-v12.4.js?v=12.4"></script>
 </body>
 </html>
