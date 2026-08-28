@@ -73,5 +73,6 @@ jobs:
             echo "Chunks already up to date."
           else
             git commit -m "Build Safari-friendly forest chunks"
-            git push
+            git pull --rebase origin main
+            git push origin HEAD:main
           fi
