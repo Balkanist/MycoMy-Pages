@@ -192,7 +192,7 @@ h2 { margin: 4px 0 0; font-family: Georgia, serif; font-size: 1.35rem; }
 .layer-button, .map-close { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; border-radius: 12px; box-shadow: 0 5px 18px rgba(23,60,43,.18); }
 .layer-button { color: var(--forest); background: white; border: 1px solid var(--line); font-size: 1.5rem; }
 .layer-button:not(.active) { opacity: .55; }
-.best-place-button { position: absolute; z-index: 700; top: 70px; right: 12px; padding: 10px 13px; color: white; background: var(--forest); border: 1px solid rgba(255,255,255,.45); border-radius: 12px; box-shadow: 0 5px 18px rgba(23,60,43,.25); font-size: .72rem; font-weight: 850; }
+.best-place-button { position: absolute; z-index: 700; top: 70px; right: 12px; width: min(330px, calc(100% - 24px)); padding: 10px 13px; color: white; background: var(--forest); border: 1px solid rgba(255,255,255,.45); border-radius: 12px; box-shadow: 0 5px 18px rgba(23,60,43,.25); font-size: .7rem; font-weight: 850; line-height: 1.25; }
 .best-place-button:disabled { cursor: wait; opacity: .72; }
 .map-close { display: none; color: white; background: var(--forest); border: 0; font-size: 1.6rem; }
 .map-legend { position: absolute; z-index: 650; right: 10px; bottom: 10px; left: 10px; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 8px 10px; color: var(--muted); background: rgba(255,255,255,.92); border-radius: 11px; box-shadow: 0 4px 16px rgba(23,60,43,.14); font-size: .64rem; }
@@ -288,5 +288,6 @@ textarea { resize: vertical; }
   font-size: .78rem;
   font-weight: 700;
 }
+
 
 
