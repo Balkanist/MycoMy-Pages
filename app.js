@@ -148,6 +148,7 @@ let weatherPoints = weatherPointsFor(activeArea);
 let pendingPosition = { lat: activeArea.lat, lng: activeArea.lng };
 let map;
 let userMarker;
+let bestPlaceMarker;
 let areaCircle;
 let areaMarker;
 let forestLayer;
@@ -793,6 +794,57 @@ function featureScore(feature) {
   return featureModel(feature).score;
 }
 
+function bestPlaceScore(feature, item) {
+  const place = featureModel(feature);
+  const location = featureCenter(feature);
+  const growth = growthAtLocation(item, location);
+  const weatherScore = growth?.score ?? localWeatherPotential(feature);
+  return {
+    feature,
+    location,
+    placeScore: place.score,
+    weatherScore: Math.round(weatherScore),
+    score: Math.round(place.score * .70 + weatherScore * .30),
+    confidence: place.confidence
+  };
+}
+
+function showBestPlace() {
+  const button = document.querySelector("#bestPlaceButton");
+  const item = species.find(entry => entry.id === selectedMapSpecies);
+  const candidates = renderedFeatures.filter(feature =>
+    distanceFromActiveArea(feature) <= advancedFilters.radius && matchesForestFilter(feature)
+  );
+  if (!item || !candidates.length) {
+    alert("Aucune maille forestière n’est disponible avec les filtres actuels.");
+    return;
+  }
+  button.disabled = true;
+  button.textContent = "Analyse en cours…";
+  requestAnimationFrame(() => setTimeout(() => {
+    const best = candidates.reduce((winner, feature) => {
+      const candidate = bestPlaceScore(feature, item);
+      return !winner || candidate.score > winner.score ? candidate : winner;
+    }, null);
+    button.disabled = false;
+    button.textContent = "⌖ Meilleur endroit/météo";
+    if (!best) return;
+    if (bestPlaceMarker) bestPlaceMarker.remove();
+    bestPlaceMarker = L.circleMarker([best.location.lat, best.location.lng], {
+      radius: 11, color: "#fff", weight: 3, fillColor: "#d49a2f", fillOpacity: 1
+    }).addTo(map);
+    const forest = forestDescription(best.feature.properties || {}) || "Peuplement forestier";
+    bestPlaceMarker.bindPopup(
+      `<strong>Meilleur compromis actuel : ${best.score}/100</strong>` +
+      `<br>${escapeHtml(item.name)} · ${escapeHtml(forest)}` +
+      `<br><small>Terrain ${best.placeScore}/100 · météo/pousse ${best.weatherScore}/100 · confiance ${best.confidence}/100</small>` +
+      `<br><small>Estimation indicative : vérifiez toujours les conditions sur place.</small>`
+    );
+    map.setView([best.location.lat, best.location.lng], Math.max(map.getZoom(), 15));
+    bestPlaceMarker.openPopup();
+  }, 20));
+}
+
 function zoneStyle(feature) {
   const score = featureScore(feature);
   const color = ZONE_BANDS.find(band => score >= band.min)?.color || ZONE_BANDS[ZONE_BANDS.length - 1].color;
@@ -1435,6 +1487,7 @@ function switchArea(areaId) {
   fineTerrainCache.clear();
   if (forestLayer) { forestLayer.remove(); forestLayer = null; }
   if (hydroLayer) { hydroLayer.remove(); hydroLayer = null; }
+  if (bestPlaceMarker) { bestPlaceMarker.remove(); bestPlaceMarker = null; }
   updateAreaControls();
   renderAreaFocus();
   map.setView([activeArea.lat, activeArea.lng], activeArea.zoom);
@@ -1453,10 +1506,12 @@ function initMapControls() {
   mapSpecies.value = selectedMapSpecies;
   mapSpecies.addEventListener("change", () => {
     selectedMapSpecies = mapSpecies.value;
+    if (bestPlaceMarker) { bestPlaceMarker.remove(); bestPlaceMarker = null; }
     if (forestFeatures.length) renderForestZones();
     renderBestDays();
     renderGrowthIndicator();
   });
+  document.querySelector("#bestPlaceButton").addEventListener("click", showBestPlace);
   document.querySelector("#toggleZonesButton").addEventListener("click", event => {
     zonesVisible = !zonesVisible;
     event.currentTarget.classList.toggle("active", zonesVisible);
@@ -1504,4 +1559,5 @@ async function boot() {
 }
 
 boot();
+
 
