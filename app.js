@@ -797,14 +797,21 @@ function featureScore(feature) {
 function bestPlaceScore(feature, item) {
   const place = featureModel(feature);
   const location = featureCenter(feature);
-  const growth = growthAtLocation(item, location);
-  const weatherScore = growth?.score ?? localWeatherPotential(feature);
+  const sample = { locations: [location], total: 1, fallback: false };
+  const harvestDays = Array.from({ length: 7 }, (_, offset) => {
+    const harvest = harvestSummaryForView(item, offset, sample);
+    if (!harvest) return null;
+    return { ...harvest, offset };
+  }).filter(Boolean);
+  const bestHarvest = harvestDays.reduce((best, day) => !best || day.score > best.score ? day : best, null);
+  const harvestScore = bestHarvest?.score ?? localWeatherPotential(feature);
   return {
     feature,
     location,
     placeScore: place.score,
-    weatherScore: Math.round(weatherScore),
-    score: Math.round(place.score * .70 + weatherScore * .30),
+    harvestScore: Math.round(harvestScore),
+    bestHarvest,
+    score: Math.round(place.score * .65 + harvestScore * .35),
     confidence: place.confidence
   };
 }
@@ -822,22 +829,30 @@ function showBestPlace() {
   button.disabled = true;
   button.textContent = "Analyse en cours…";
   requestAnimationFrame(() => setTimeout(() => {
-    const best = candidates.reduce((winner, feature) => {
+    const shortlist = candidates
+      .map(feature => ({ feature, terrainScore: featureModel(feature).score }))
+      .sort((a, b) => b.terrainScore - a.terrainScore)
+      .slice(0, 120)
+      .map(entry => entry.feature);
+    const best = shortlist.reduce((winner, feature) => {
       const candidate = bestPlaceScore(feature, item);
       return !winner || candidate.score > winner.score ? candidate : winner;
     }, null);
     button.disabled = false;
-    button.textContent = "⌖ Meilleur endroit/météo";
+    button.textContent = "⌖ Meilleur endroit / meilleur moment pour la récolte";
     if (!best) return;
     if (bestPlaceMarker) bestPlaceMarker.remove();
     bestPlaceMarker = L.circleMarker([best.location.lat, best.location.lng], {
       radius: 11, color: "#fff", weight: 3, fillColor: "#d49a2f", fillOpacity: 1
     }).addTo(map);
     const forest = forestDescription(best.feature.properties || {}) || "Peuplement forestier";
+    const bestDate = best.bestHarvest?.date ? new Date(`${best.bestHarvest.date}T12:00:00`) : new Date();
+    const dateLabel = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(bestDate);
     bestPlaceMarker.bindPopup(
-      `<strong>Meilleur compromis actuel : ${best.score}/100</strong>` +
+      `<strong>Meilleur endroit et moment : ${best.score}/100</strong>` +
       `<br>${escapeHtml(item.name)} · ${escapeHtml(forest)}` +
-      `<br><small>Terrain ${best.placeScore}/100 · météo/pousse ${best.weatherScore}/100 · confiance ${best.confidence}/100</small>` +
+      `<br><strong>Récolte conseillée : ${dateLabel}</strong>` +
+      `<br><small>Terrain ${best.placeScore}/100 · récolte estimée ${best.harvestScore}/100 · confiance ${best.confidence}/100</small>` +
       `<br><small>Estimation indicative : vérifiez toujours les conditions sur place.</small>`
     );
     map.setView([best.location.lat, best.location.lng], Math.max(map.getZoom(), 15));
@@ -1559,5 +1574,6 @@ async function boot() {
 }
 
 boot();
+
 
 
