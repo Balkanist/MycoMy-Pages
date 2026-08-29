@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "12.7";
+  const VERSION = "12.8";
   const originalForestLoader = loadForestZones;
 
   function finite(value, fallback = 0) {
@@ -243,5 +243,6 @@
 
   console.info(`MycoMy runtime ${VERSION} actif`);
 })();
+
 
 
