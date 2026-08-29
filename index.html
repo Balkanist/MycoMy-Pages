@@ -8,9 +8,9 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="MycoMy">
   <title>MycoMy</title>
-  <link rel="manifest" href="manifest.webmanifest?v=12.5">
+  <link rel="manifest" href="manifest.webmanifest?v=12.6">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=12.5">
+  <link rel="stylesheet" href="styles.css?v=12.6">
 </head>
 <body>
   <header class="hero">
@@ -51,21 +51,31 @@
         <strong id="growthStatus" class="growth-status">Calcul des conditions en cours</strong>
         <p id="growthExplanation" class="microcopy">Pluie, bilan hydrique, humidité et température du sol.</p>
         <p id="growthScope" class="growth-scope">Vue cartographique en cours d’analyse…</p>
+        <div id="harvestIndicator" class="harvest-indicator level-low" aria-live="polite">
+          <div class="harvest-heading">
+            <div><span class="growth-kicker">Récolte estimée</span><strong id="harvestStatus">Calcul de la maturité en cours</strong></div>
+            <span id="harvestValue" class="harvest-value">—/100</span>
+          </div>
+          <div class="harvest-track" aria-hidden="true"><i id="harvestBar"></i></div>
+          <p id="harvestExplanation" class="microcopy">Estimation fondée sur les pousses probables des jours précédents.</p>
+          <strong id="harvestBestDay" class="harvest-best-day">Recherche du meilleur créneau…</strong>
+        </div>
         <div class="growth-forecast" aria-labelledby="timingIntro">
           <div class="forecast-heading">
             <strong>7 jours glissants</strong>
             <span id="timingIntro">Prévision spatialisée en cours…</span>
           </div>
           <div id="bestDays" class="best-days"><p class="muted">Chargement de la météo…</p></div>
+          <p class="forecast-legend"><span>Grand chiffre : récolte estimée</span><span>Pousse : conditions de fructification</span></p>
         </div>
       </div>
-      <p class="microcopy">Les deux indices suivent l’emprise visible de la carte et sont recalculés après un zoom ou un déplacement. Ils ne confirment ni la présence ni la comestibilité d’un champignon.</p>
+      <p class="microcopy">Les indices suivent l’emprise visible de la carte et sont recalculés après un zoom ou un déplacement. La récolte estimée décale la pousse probable selon le temps de développement propre à l’espèce. Aucun indice ne confirme la présence ni la comestibilité d’un champignon.</p>
     </section>
 
     <section class="panel map-panel" aria-labelledby="mapTitle">
       <div class="section-heading">
         <div>
-          <p class="eyebrow">Modèle MycoMy v12.5 · météo spatialisée et analyse fine jusqu’à ~75–85 m</p>
+          <p class="eyebrow">Modèle MycoMy v12.6 · météo spatialisée et analyse fine jusqu’à ~75–85 m</p>
           <h2 id="mapTitle">Carte personnelle</h2>
         </div>
         <div class="map-actions">
@@ -144,7 +154,8 @@
   </dialog>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=12.5"></script>
-  <script src="runtime-v12.5.js?v=12.5"></script>
+  <script src="app.js?v=12.6"></script>
+  <script src="runtime-v12.5.js?v=12.6"></script>
 </body>
 </html>
+
