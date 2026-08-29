@@ -8,9 +8,9 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="MycoMy">
   <title>MycoMy</title>
-  <link rel="manifest" href="manifest.webmanifest?v=12.7">
+  <link rel="manifest" href="manifest.webmanifest?v=12.8">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=12.7">
+  <link rel="stylesheet" href="styles.css?v=12.8">
 </head>
 <body>
   <header class="hero">
@@ -75,7 +75,7 @@
     <section class="panel map-panel" aria-labelledby="mapTitle">
       <div class="section-heading">
         <div>
-          <p class="eyebrow">Modèle MycoMy v12.7 · météo spatialisée et analyse fine jusqu’à ~75–85 m</p>
+          <p class="eyebrow">Modèle MycoMy v12.8 · météo spatialisée et analyse fine jusqu’à ~75–85 m</p>
           <h2 id="mapTitle">Carte personnelle</h2>
         </div>
         <div class="map-actions">
@@ -93,7 +93,7 @@
           <button id="toggleZonesButton" class="layer-button active" type="button" aria-pressed="true" title="Afficher ou masquer les zones">▱</button>
           <button id="toggleLidarButton" class="layer-button" type="button" aria-pressed="false" title="Relief IGN LiDAR HD à fort zoom">⌁</button>
         </div>
-        <button id="bestPlaceButton" class="best-place-button" type="button">⌖ Meilleur endroit/météo</button>
+        <button id="bestPlaceButton" class="best-place-button" type="button">⌖ Meilleur endroit / meilleur moment pour la récolte</button>
         <div id="map" role="application" aria-label="Carte de vos zones de recherche et de vos récoltes"></div>
         <div class="map-legend" aria-live="polite">
           <span><i class="legend-swatch band-0"></i>0–19 %</span>
@@ -155,9 +155,10 @@
   </dialog>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=12.7"></script>
-  <script src="runtime-v12.5.js?v=12.7"></script>
+  <script src="app.js?v=12.8"></script>
+  <script src="runtime-v12.5.js?v=12.8"></script>
 </body>
 </html>
+
 
 
