@@ -84,6 +84,17 @@ const GROWTH_PROFILES = {
   "bolet-jaune": { rainDays: 18, rainTarget: 38, triggerRain: 5, moisture: [.19, .39], soilTemp: [7, 17] },
   "bolet-bai": { rainDays: 18, rainTarget: 42, triggerRain: 5, moisture: [.20, .41], soilTemp: [7, 17] }
 };
+// Fenêtre indicative entre une pousse probable et une taille de cueillette
+// intéressante. Elle reste une heuristique météo, jamais une constatation terrain.
+const HARVEST_WINDOWS = {
+  default: [3, 6],
+  "morille-commune": [3, 5], "morille-conique": [3, 5],
+  "cepe-bordeaux": [3, 6], "cepe-ete": [2, 5], "cepe-pins": [3, 6], "cepe-bronze": [2, 5],
+  girolle: [5, 9], trompette: [5, 9], "pied-mouton": [4, 8], coulemelle: [2, 4],
+  "saint-georges": [3, 6], "chanterelle-tube": [5, 9], "lactaire-delicieux": [3, 6], oronge: [2, 4],
+  "pleurote-huitre": [3, 6], "pholiote-peuplier": [3, 6], "bolet-jaune": [2, 5],
+  sparassis: [5, 9], "bolet-bai": [3, 6], "collybie-veloutee": [3, 6], "russule-charbonniere": [3, 6]
+};
 function weatherPointsFor(area) {
   const latStep = area.radius / 111;
   const lngStep = area.radius / (111 * Math.cos(area.lat * Math.PI / 180));
@@ -705,6 +716,33 @@ function forecastGrowthSummaryForView(item, offset, sample) {
     moisture: average("moisture"),
     soilTemperature: average("soilTemperature")
   };
+}
+
+function harvestSummaryForView(item, offset, sample) {
+  if (!item || !sample) return null;
+  const [minimumAge, maximumAge] = HARVEST_WINDOWS[item.id] || HARVEST_WINDOWS.default;
+  const midpoint = (minimumAge + maximumAge) / 2;
+  const candidates = [];
+  for (let age = minimumAge; age <= maximumAge; age++) {
+    const growth = forecastGrowthSummaryForView(item, offset - age, sample);
+    if (!growth) continue;
+    const weight = 1 / (1 + Math.abs(age - midpoint));
+    candidates.push({ growth, weight });
+  }
+  const current = forecastGrowthSummaryForView(item, offset, sample);
+  if (!candidates.length || !current) return null;
+  const weightTotal = candidates.reduce((sum, entry) => sum + entry.weight, 0);
+  const matureGrowth = candidates.reduce((sum, entry) => sum + entry.growth.score * entry.weight, 0) / weightTotal;
+  const score = Math.max(0, Math.min(100, Math.round(matureGrowth * .8 + current.score * .2)));
+  return { ...current, score, growthScore: current.score, minimumAge, maximumAge };
+}
+
+function harvestLevel(score) {
+  if (score >= 80) return { css: "strong", label: "Très bon moment pour prospecter" };
+  if (score >= 65) return { css: "good", label: "Récolte intéressante possible" };
+  if (score >= 45) return { css: "possible", label: "Quelques sujets mûrs possibles" };
+  if (score >= 25) return { css: "wait", label: "Mieux vaut encore patienter" };
+  return { css: "low", label: "Récolte peu probable actuellement" };
 }
 
 function observationBoost(feature, speciesId = selectedMapSpecies) {
@@ -1466,3 +1504,4 @@ async function boot() {
 }
 
 boot();
+
