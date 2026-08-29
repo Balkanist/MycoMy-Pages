@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "12.5";
+  const VERSION = "12.6";
   const originalForestLoader = loadForestZones;
 
   function finite(value, fallback = 0) {
@@ -17,10 +17,20 @@
       ? "Impossible d’actualiser la météo pour le moment."
       : "Connexion Internet indisponible.";
     if (bestDays) bestDays.innerHTML = `<p class="muted">${online ? "Prévisions météo temporairement indisponibles." : "Prévisions indisponibles hors connexion."}</p>`;
+    const harvestStatus = document.querySelector("#harvestStatus");
+    const harvestValue = document.querySelector("#harvestValue");
+    const harvestBar = document.querySelector("#harvestBar");
+    const harvestExplanation = document.querySelector("#harvestExplanation");
+    const harvestBestDay = document.querySelector("#harvestBestDay");
+    if (harvestStatus) harvestStatus.textContent = "Estimation indisponible";
+    if (harvestValue) harvestValue.textContent = "—/100";
+    if (harvestBar) harvestBar.style.width = "0%";
+    if (harvestExplanation) harvestExplanation.textContent = "La maturité sera recalculée à la prochaine connexion.";
+    if (harvestBestDay) harvestBestDay.textContent = "Aucun créneau calculable hors connexion";
     console.error("MycoMy weather", error);
   }
 
-  renderBestDays = function renderBestDaysV125() {
+  renderBestDays = function renderBestDaysV126() {
     const container = document.querySelector("#bestDays");
     const intro = document.querySelector("#timingIntro");
     if (!container || !weatherNodes.length) return;
@@ -32,9 +42,10 @@
 
     for (let offset = 0; offset < 7; offset++) {
       try {
-        const day = forecastGrowthSummaryForView(selected, offset, sample);
-        if (!day || typeof day.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(day.date)) continue;
-        if (!Number.isFinite(Number(day.score))) continue;
+        const growth = forecastGrowthSummaryForView(selected, offset, sample);
+        const day = harvestSummaryForView(selected, offset, sample);
+        if (!day || !growth || typeof day.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(day.date)) continue;
+        if (!Number.isFinite(Number(day.score)) || !Number.isFinite(Number(growth.score))) continue;
         const parsed = new Date(`${day.date}T12:00:00`);
         if (Number.isNaN(parsed.getTime())) continue;
         days.push({
@@ -46,7 +57,8 @@
           rain: finite(day.rain),
           balance: finite(day.balance),
           moisture: finite(day.moisture, centerWeatherModel?.moisture),
-          soilTemperature: finite(day.soilTemperature, centerWeatherModel?.soilTemperature)
+          soilTemperature: finite(day.soilTemperature, centerWeatherModel?.soilTemperature),
+          growthScore: Math.round(finite(growth.score))
         });
       } catch (error) {
         console.warn(`MycoMy forecast J+${offset}`, error);
@@ -59,14 +71,14 @@
     }
 
     const bestScore = Math.max(...days.map(day => day.score));
-    const current = growthSummaryForView(selected)?.score ?? days[0].score;
+    const current = days[0].score;
     if (intro) intro.textContent = `${selected.name} · ${viewExtentLabel(sample)}`;
 
     container.innerHTML = days.map((day, index) => {
       const previous = index ? days[index - 1].score : current;
       const delta = day.score - previous;
       const trend = delta >= 4 ? "↗" : delta <= -4 ? "↘" : "→";
-      const title = `${day.score}/100 (plage ${day.minScore}–${day.maxScore}) · pluie ${day.rain.toFixed(1)} mm · bilan ${day.balance >= 0 ? "+" : ""}${day.balance.toFixed(1)} mm · sol ${(day.moisture * 100).toFixed(0)} % et ${day.soilTemperature.toFixed(1)} °C`;
+      const title = `Récolte estimée ${day.score}/100 · pousse ${day.growthScore}/100 · pluie ${day.rain.toFixed(1)} mm · bilan ${day.balance >= 0 ? "+" : ""}${day.balance.toFixed(1)} mm · sol ${(day.moisture * 100).toFixed(0)} % et ${day.soilTemperature.toFixed(1)} °C`;
       const weekday = new Intl.DateTimeFormat("fr-FR", { weekday: "short" }).format(day.parsed).replace(".", "");
       const dateLabel = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit" }).format(day.parsed);
       return `
@@ -74,9 +86,24 @@
           <strong>${weekday}</strong>
           <span class="forecast-date">${dateLabel}</span>
           <span class="day-score">${day.score}</span>
+          <span class="day-growth">Pousse ${day.growthScore}</span>
           <span class="day-trend" aria-hidden="true">${trend}</span>
         </article>`;
     }).join("");
+
+    const today = days[0];
+    const level = harvestLevel(today.score);
+    const indicator = document.querySelector("#harvestIndicator");
+    if (indicator) indicator.className = `harvest-indicator level-${level.css}`;
+    document.querySelector("#harvestValue").textContent = `${today.score}/100`;
+    document.querySelector("#harvestBar").style.width = `${today.score}%`;
+    document.querySelector("#harvestStatus").textContent = level.label;
+    document.querySelector("#harvestExplanation").textContent = `Taille intéressante estimée après environ ${today.minimumAge} à ${today.maximumAge} jours de développement pour ${selected.name}.`;
+    const bestDay = days.reduce((best, day) => day.score > best.score ? day : best, days[0]);
+    const bestLabel = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(bestDay.parsed);
+    document.querySelector("#harvestBestDay").textContent = bestDay.score === today.score
+      ? `Meilleur créneau estimé : aujourd’hui (${today.score}/100)`
+      : `Meilleur créneau estimé : ${bestLabel} (${bestDay.score}/100)`;
   };
 
   loadWeather = async function loadWeatherV125() {
@@ -216,3 +243,4 @@
 
   console.info(`MycoMy runtime ${VERSION} actif`);
 })();
+
