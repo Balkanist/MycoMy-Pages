@@ -1,12 +1,12 @@
-const CACHE = "mycomy-v12-9";
+const CACHE = "mycomy-v13-0";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=12.9",
-  "./app.js?v=12.9",
-  "./runtime-v12.5.js?v=12.9",
-  "./tracking-v12.9.js?v=12.9",
-  "./manifest.webmanifest?v=12.9"
+  "./styles.css?v=13.0",
+  "./app.js?v=13.0",
+  "./runtime-v12.5.js?v=13.0",
+  "./tracking-v13.0.js?v=13.0",
+  "./manifest.webmanifest?v=13.0"
 ];
 
 self.addEventListener("install", event => {
