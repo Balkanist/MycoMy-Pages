@@ -3,12 +3,9 @@
   "short_name": "MycoMy",
   "description": "Carte et carnet mycologique personnel sur quatre zones d’exploration.",
   "lang": "fr",
-  "start_url": "./?v=12.8",
+  "start_url": "./?v=12.9",
   "display": "standalone",
   "background_color": "#f5f1e7",
   "theme_color": "#173c2b",
   "orientation": "portrait-primary"
 }
-
-
-
