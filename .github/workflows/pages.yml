@@ -30,6 +30,7 @@ jobs:
         run: |
           node --check app.js
           node --check runtime-v12.5.js
+          node --check tracking-v12.9.js
           test -s forest68/index.json
           test "$(find forest68 -maxdepth 1 -name 'chunk-*.json' | wc -l)" -ge 10
 
