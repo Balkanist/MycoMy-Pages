@@ -1,20 +1,20 @@
 const SEARCH_AREAS = {
   bruebach: {
     id: "bruebach", name: "Bruebach", lat: 47.7006, lng: 7.3606, radius: 40, zoom: 10,
-    forestFile: "bdforet68.json?v=8", hydroFile: "hydro68.json?v=1", observationsFile: "observations68.json?v=2",
+    forestFile: "bdforet68.json?v=13.1", hydroFile: "hydro68.json?v=1", observationsFile: "observations68.json?v=2",
     contextFile: "context68.json?v=1"
   },
   porcelette: {
     id: "porcelette", name: "Porcelette", lat: 49.157222, lng: 6.656389, radius: 10, zoom: 12,
-    forestFile: "bdforet57.json?v=2", hydroFile: "hydro57.json?v=1", observationsFile: "observations57.json?v=1"
+    forestFile: "bdforet57.json?v=13.1", hydroFile: "hydro57.json?v=1", observationsFile: "observations57.json?v=1"
   },
   chatel: {
     id: "chatel", name: "Châtel-Saint-Germain", lat: 49.1297, lng: 6.0642, radius: 10, zoom: 12,
-    forestFile: "bdforet-chatel.json?v=1", hydroFile: "hydro-chatel.json?v=1", observationsFile: "observations-chatel.json?v=1"
+    forestFile: "bdforet-chatel.json?v=13.1", hydroFile: "hydro-chatel.json?v=1", observationsFile: "observations-chatel.json?v=1"
   },
   hayange: {
     id: "hayange", name: "Hayange", lat: 49.3340, lng: 6.0641, radius: 10, zoom: 12,
-    forestFile: "bdforet-hayange.json?v=1", hydroFile: "hydro-hayange.json?v=1", observationsFile: "observations-hayange.json?v=1"
+    forestFile: "bdforet-hayange.json?v=13.1", hydroFile: "hydro-hayange.json?v=1", observationsFile: "observations-hayange.json?v=1"
   }
 };
 const STORAGE_KEY = "mycomy-spots-v1";
@@ -67,6 +67,11 @@ const PH_PREFERENCES = {
   "lactaire-delicieux": [5.5, 7.5], oronge: [4.5, 6.8], "bolet-jaune": [4, 6], "bolet-bai": [4, 6.2],
   "russule-charbonniere": [4.5, 6.8]
 };
+const ACID_SOIL_TYPES = ["ALOCRISOL", "PODZOSOL", "RANKOSOL"];
+const CALCAREOUS_SOIL_TYPES = ["CALCOSOL", "CALCISOL", "RENDOSOL", "RENDISOL"];
+const WET_SOIL_TYPES = ["REDOXISOL", "REDUCTISOL", "ORGANOSOL", "FLUVIOSOL"];
+const ACID_SOIL_SPECIES = ["cepe-bordeaux", "cepe-pins", "girolle", "chanterelle-tube", "bolet-jaune", "bolet-bai"];
+const CALCAREOUS_SOIL_SPECIES = ["morille-commune", "morille-conique", "lactaire-delicieux", "trompette"];
 const GROWTH_PROFILES = {
   default: { rainDays: 14, rainTarget: 35, triggerRain: 5, moisture: [.18, .38], soilTemp: [7, 20] },
   "morille-commune": { rainDays: 14, rainTarget: 28, triggerRain: 4, moisture: [.17, .34], soilTemp: [6, 14] },
@@ -178,6 +183,9 @@ let fineRenderTimer;
 let terrainRequestToken = 0;
 let renderedFineMode = false;
 let areaLoadToken = 0;
+let pendingBiotope = null;
+const soilInfoCache = new Map();
+let biotopeRequestToken = 0;
 
 function loadSpots() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY)) || []; }
@@ -378,6 +386,26 @@ function phCompatibilityFor(properties, speciesId) {
   return Math.max(-3, Math.round(6 - distance * 5));
 }
 
+function soilTypologyCompatibilityFor(properties, speciesId) {
+  const soil = String(properties.soil_typology || "").toUpperCase();
+  if (!soil) return 0;
+  const share = Number(properties.soil_typology_share);
+  const reliability = Number.isFinite(share) ? Math.max(.35, Math.min(1, share / 60)) : .6;
+  let signal = 0;
+  if (ACID_SOIL_TYPES.some(type => soil.includes(type))) {
+    if (ACID_SOIL_SPECIES.includes(speciesId)) signal += 3;
+    if (CALCAREOUS_SOIL_SPECIES.includes(speciesId)) signal -= 3;
+  }
+  if (CALCAREOUS_SOIL_TYPES.some(type => soil.includes(type))) {
+    if (CALCAREOUS_SOIL_SPECIES.includes(speciesId)) signal += 3;
+    if (ACID_SOIL_SPECIES.includes(speciesId)) signal -= 3;
+  }
+  if (WET_SOIL_TYPES.some(type => soil.includes(type)) && ["trompette", "girolle", "chanterelle-tube", "pied-mouton", "morille-commune"].includes(speciesId)) {
+    signal += 2;
+  }
+  return Math.round(signal * reliability);
+}
+
 function dominantHostRpp(properties, speciesId) {
   const hosts = HOST_TREES[speciesId] || {};
   const profile = rppProfileFor(properties);
@@ -395,6 +423,7 @@ function modelConfidence(feature) {
   if (properties.terrain_source) confidence += 10;
   if (Number.isFinite(Number(properties.local_moisture_index))) confidence += 10;
   if (Number.isFinite(Number(properties.soil_ph))) confidence += 8;
+  if (properties.soil_typology_source) confidence += 4;
   if (rppProfileFor(properties).rpp && Object.keys(rppProfileFor(properties).rpp).length) confidence += 13;
   if (weatherNodes.length) confidence += 10;
   if (observationModel.species?.[selectedMapSpecies]?.occurrences) confidence += 7;
@@ -778,8 +807,15 @@ function featureModel(feature) {
     historique: Math.round(observationBoost(feature) * .70),
     personnel: userCalibrationBoost(feature),
     zoneHumide: refined ? wetlandCompatibilityFor(modelingProperties, selectedMapSpecies) : 0,
-    reliefFin: refined ? fineReliefCompatibilityFor(modelingProperties, selectedMapSpecies) : 0
+    reliefFin: refined ? fineReliefCompatibilityFor(modelingProperties, selectedMapSpecies) : 0,
+    solTypologique: 0
   };
+  const scoreBeforeSoilTypology = Math.round(12 + Object.values(components).reduce((sum, value) => sum + value, 0));
+  // GIS Sol est une donnée de contexte à grande échelle : elle départage
+  // seulement les mailles déjà prometteuses et ne remplace pas le pH 250 m.
+  if (scoreBeforeSoilTypology >= CASCADE_SCORE_THRESHOLD) {
+    components.solTypologique = soilTypologyCompatibilityFor(modelingProperties, selectedMapSpecies);
+  }
   const score = Math.max(5, Math.min(100, Math.round(12 + Object.values(components).reduce((sum, value) => sum + value, 0))));
   return {
     score,
@@ -916,6 +952,9 @@ function renderForestZones({ skipTerrainFetch = false } = {}) {
       const soil = feature.properties.soil_source
         ? `<br><small>Sol régional : ${escapeHtml(feature.properties.soil_texture || "texture non renseignée")} · ${escapeHtml(feature.properties.soil_water || "hydrologie non renseignée")} (RRP 1:250 000)</small>`
         : "";
+      const soilTypology = feature.properties.soil_typology_source
+        ? `<br><small>Type de sol dominant : <strong>${escapeHtml(feature.properties.soil_typology)}</strong>${Number.isFinite(Number(feature.properties.soil_typology_share)) ? ` · ${feature.properties.soil_typology_share} % de l’unité cartographique` : ""}<br>${escapeHtml(feature.properties.soil_unit || "Unité de sol non renseignée")} (INRAE/GIS Sol)</small>`
+        : "";
       const ph = Number.isFinite(Number(feature.properties.soil_ph))
         ? `<br><small>pH estimé : ${Number(feature.properties.soil_ph).toFixed(1)} (SoilGrids, maille source 250 m)</small>`
         : "";
@@ -935,9 +974,10 @@ function renderForestZones({ skipTerrainFetch = false } = {}) {
       const refinedContributions = model.refined
         ? ` · zone humide ${model.components.zoneHumide >= 0 ? "+" : ""}${model.components.zoneHumide} · relief fin ${model.components.reliefFin >= 0 ? "+" : ""}${model.components.reliefFin}`
         : "";
-      const explanation = `<br><small>Contributions : météo ${model.components.meteo >= 0 ? "+" : ""}${model.components.meteo} · peuplement ${model.components.peuplement >= 0 ? "+" : ""}${model.components.peuplement} · RPP ${model.components.arbresRpp >= 0 ? "+" : ""}${model.components.arbresRpp} · milieu ${model.components.milieu >= 0 ? "+" : ""}${model.components.milieu} · humidité ${model.components.humidite >= 0 ? "+" : ""}${model.components.humidite} · pH ${model.components.ph >= 0 ? "+" : ""}${model.components.ph}${refinedContributions}</small>`;
+      const soilContribution = model.components.solTypologique ? ` · type de sol ${model.components.solTypologique >= 0 ? "+" : ""}${model.components.solTypologique}` : "";
+      const explanation = `<br><small>Contributions : météo ${model.components.meteo >= 0 ? "+" : ""}${model.components.meteo} · peuplement ${model.components.peuplement >= 0 ? "+" : ""}${model.components.peuplement} · RPP ${model.components.arbresRpp >= 0 ? "+" : ""}${model.components.arbresRpp} · milieu ${model.components.milieu >= 0 ? "+" : ""}${model.components.milieu} · humidité ${model.components.humidite >= 0 ? "+" : ""}${model.components.humidite} · pH ${model.components.ph >= 0 ? "+" : ""}${model.components.ph}${soilContribution}${refinedContributions}</small>`;
       const source = `<br><small>Météo + ${escapeHtml(feature.properties.source || "informations forestières OSM")}.</small>`;
-      layer.bindPopup(`<strong>${model.refined ? "Score affiné" : "Score initial"} : ${score}/100</strong> · confiance des données ${model.confidence}/100<br>${escapeHtml(type)}${environment}${moisture}${soil}${ph}${rpp}${fine}${detailedGeology}${wetland}${history}${calibrationText}${explanation}${source}`);
+      layer.bindPopup(`<strong>${model.refined ? "Score affiné" : "Score initial"} : ${score}/100</strong> · confiance des données ${model.confidence}/100<br>${escapeHtml(type)}${environment}${moisture}${soil}${soilTypology}${ph}${rpp}${fine}${detailedGeology}${wetland}${history}${calibrationText}${explanation}${source}`);
     }
   });
   if (zonesVisible) forestLayer.addTo(map);
@@ -1107,6 +1147,108 @@ function buildForestGrid(polygons) {
   return [...cells.values()];
 }
 
+function wmtsSoilInfoUrl(lat, lng, zoom = 14) {
+  const scale = 2 ** zoom;
+  const x = (lng + 180) / 360 * scale;
+  const latitude = Math.max(-85.0511, Math.min(85.0511, lat));
+  const y = (1 - Math.asinh(Math.tan(latitude * Math.PI / 180)) / Math.PI) / 2 * scale;
+  const parameters = new URLSearchParams({
+    SERVICE: "WMTS", REQUEST: "GetFeatureInfo", VERSION: "1.0.0",
+    LAYER: "INRA.CARTE.SOLS", STYLE: "CARTE DES SOLS", FORMAT: "image/png",
+    TILEMATRIXSET: "PM_6_16", TILEMATRIX: String(zoom),
+    TILEROW: String(Math.floor(y)), TILECOL: String(Math.floor(x)),
+    I: String(Math.floor((x - Math.floor(x)) * 256)),
+    J: String(Math.floor((y - Math.floor(y)) * 256)),
+    INFOFORMAT: "application/json"
+  });
+  return `https://data.geopf.fr/wmts?${parameters}`;
+}
+
+function normalizedSoilProfile(properties = {}) {
+  if (!properties.ger_nom && !properties.soil_typology) return null;
+  return {
+    type: String(properties.soil_typology || properties.ger_nom || "").split("(", 1)[0].trim(),
+    share: Number(properties.soil_typology_share ?? properties.pourcnt),
+    unit: properties.soil_unit || properties.nom_ucs || "Unité cartographique non renseignée",
+    unitId: properties.soil_unit_id || properties.id_ucs || null,
+    source: "INRAE/GIS Sol · Carte des sols"
+  };
+}
+
+async function fetchSoilProfile(lat, lng) {
+  const key = `${lat.toFixed(4)}:${lng.toFixed(4)}`;
+  if (soilInfoCache.has(key)) return soilInfoCache.get(key);
+  const request = fetch(wmtsSoilInfoUrl(lat, lng)).then(async response => {
+    if (!response.ok) throw new Error("soil");
+    const payload = await response.json();
+    const candidates = (payload.features || []).map(feature => normalizedSoilProfile(feature.properties)).filter(Boolean);
+    return candidates.sort((a, b) => (Number(b.share) || 0) - (Number(a.share) || 0))[0] || null;
+  }).catch(() => null);
+  soilInfoCache.set(key, request);
+  return request;
+}
+
+function nearestForestBiotope(position) {
+  let nearest = null;
+  let nearestDistance = Infinity;
+  for (const feature of forestFeatures) {
+    const center = featureCenter(feature);
+    const distance = distanceKm(position, center);
+    if (distance < nearestDistance) {
+      nearest = feature;
+      nearestDistance = distance;
+    }
+  }
+  if (!nearest || nearestDistance > .45) return null;
+  const properties = nearest.properties || {};
+  return {
+    forest: forestDescription(properties) || properties.tfv || "Peuplement non renseigné",
+    geology: properties.geology || properties.substrate || null,
+    elevation: Number.isFinite(Number(properties.elevation)) ? Number(properties.elevation) : null,
+    slope: Number.isFinite(Number(properties.slope)) ? Number(properties.slope) : null,
+    moisture: Number.isFinite(Number(properties.local_moisture_index)) ? Number(properties.local_moisture_index) : null,
+    waterDistance: Number.isFinite(Number(properties.hydro_distance_m)) ? Number(properties.hydro_distance_m) : null,
+    ph: Number.isFinite(Number(properties.soil_ph)) ? Number(properties.soil_ph) : null,
+    embeddedSoil: normalizedSoilProfile(properties)
+  };
+}
+
+async function biotopeAt(position) {
+  const forest = nearestForestBiotope(position);
+  const queriedSoil = await fetchSoilProfile(position.lat, position.lng);
+  return { ...(forest || {}), soil: queriedSoil || forest?.embeddedSoil || null };
+}
+
+function biotopeHtml(biotope, { saved = false } = {}) {
+  if (!biotope || (!biotope.forest && !biotope.soil)) return `<span class="muted">Aucun biotope forestier détaillé à cet endroit.</span>`;
+  const rows = [];
+  if (biotope.forest) rows.push(`<span>🌲 <strong>Forêt</strong> · ${escapeHtml(biotope.forest)}</span>`);
+  if (biotope.soil) {
+    const share = Number.isFinite(Number(biotope.soil.share)) ? ` · ${Number(biotope.soil.share)} % de l’unité` : "";
+    rows.push(`<span>🌱 <strong>Sol</strong> · ${escapeHtml(biotope.soil.type)}${share}</span>`);
+    rows.push(`<span class="biotope-detail">${escapeHtml(biotope.soil.unit)}</span>`);
+  }
+  if (Number.isFinite(biotope.ph)) rows.push(`<span>🧪 <strong>pH estimé</strong> · ${Number(biotope.ph).toFixed(1)} (SoilGrids 250 m)</span>`);
+  if (biotope.geology) rows.push(`<span>🪨 <strong>Sous-sol</strong> · ${escapeHtml(biotope.geology)}</span>`);
+  if (Number.isFinite(biotope.elevation)) rows.push(`<span>⛰️ <strong>Relief</strong> · ${biotope.elevation} m${Number.isFinite(biotope.slope) ? ` · pente ${biotope.slope}°` : ""}</span>`);
+  if (Number.isFinite(biotope.moisture)) rows.push(`<span>💧 <strong>Humidité locale</strong> · ${biotope.moisture}/100${Number.isFinite(biotope.waterDistance) ? ` · eau à ${biotope.waterDistance} m` : ""}</span>`);
+  if (saved) rows.push(`<small>Biotope mémorisé lors de l’observation.</small>`);
+  else rows.push(`<small>Le pourcentage de sol décrit l’unité cartographique, pas la probabilité exacte sous vos pieds.</small>`);
+  return rows.join("");
+}
+
+async function refreshPendingBiotope() {
+  const container = document.querySelector("#spotBiotope");
+  if (!container) return;
+  const token = ++biotopeRequestToken;
+  pendingBiotope = null;
+  container.innerHTML = `<span class="muted">Analyse du biotope IGN / GIS Sol…</span>`;
+  const result = await biotopeAt(pendingPosition);
+  if (token !== biotopeRequestToken) return;
+  pendingBiotope = result;
+  container.innerHTML = biotopeHtml(result);
+}
+
 function markerIcon(outcome = "found") {
   const symbol = outcome === "not_found" ? "−" : "●";
   return L.divIcon({ className: "", html: `<div class='spot-marker ${outcome}'><span>${symbol}</span></div>`, iconSize: [32, 32], iconAnchor: [8, 30] });
@@ -1119,7 +1261,11 @@ function renderSpots() {
     const item = species.find(entry => entry.id === spot.species);
     const outcome = spot.outcome || "found";
     const marker = L.marker([spot.lat, spot.lng], { icon: markerIcon(outcome) }).addTo(map);
-    marker.bindPopup(`<strong>${outcome === "not_found" ? "Pas trouvé" : "Trouvé"} · ${item?.name || "Observation"}</strong><br>${spot.date}${spot.note ? `<br>${escapeHtml(spot.note)}` : ""}`);
+    const weather = spot.weather
+      ? `<div class="saved-weather">🌧️ ${spot.weather.rain} mm · sol ${spot.weather.moisture} % / ${spot.weather.soilTemperature} °C</div>`
+      : "";
+    const biotope = spot.biotope ? `<div class="popup-biotope">${biotopeHtml(spot.biotope, { saved: true })}</div>` : "";
+    marker.bindPopup(`<strong>${outcome === "not_found" ? "Pas trouvé" : "Trouvé"} · ${item?.name || "Observation"}</strong><br>${spot.date}${spot.note ? `<br>${escapeHtml(spot.note)}` : ""}${weather}${biotope}`);
     spotMarkers.push(marker);
   });
 }
@@ -1418,6 +1564,7 @@ function useCurrentPosition({ centerMap = false } = {}) {
     navigator.geolocation.getCurrentPosition(position => {
       pendingPosition = { lat: position.coords.latitude, lng: position.coords.longitude };
       document.querySelector("#spotLocation").textContent = `Position : ${pendingPosition.lat.toFixed(5)}, ${pendingPosition.lng.toFixed(5)}`;
+      refreshPendingBiotope();
       if (map && centerMap) {
         if (userMarker) userMarker.remove();
         userMarker = L.circleMarker([pendingPosition.lat, pendingPosition.lng], { radius: 8, color: "#fff", weight: 3, fillColor: "#2b6de0", fillOpacity: 1 }).addTo(map);
@@ -1437,6 +1584,7 @@ function initForm() {
     pendingPosition = map ? { lat: map.getCenter().lat, lng: map.getCenter().lng } : { lat: activeArea.lat, lng: activeArea.lng };
     document.querySelector("#spotLocation").textContent = `Position : ${pendingPosition.lat.toFixed(5)}, ${pendingPosition.lng.toFixed(5)}`;
     dialog.showModal();
+    refreshPendingBiotope();
   });
   document.querySelector("#closeDialog").addEventListener("click", () => dialog.close());
   document.querySelector("#useLocationButton").addEventListener("click", async event => {
@@ -1450,12 +1598,21 @@ function initForm() {
   document.querySelector("#spotForm").addEventListener("submit", event => {
     event.preventDefault();
     const spots = loadSpots();
+    const selectedItem = species.find(item => item.id === select.value);
+    const localGrowth = selectedItem ? growthAtLocation(selectedItem, pendingPosition) : null;
     spots.push({
       id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
       species: select.value,
       outcome: document.querySelector("input[name='spotOutcome']:checked")?.value || "found",
       date: document.querySelector("#spotDate").value,
       note: document.querySelector("#spotNote").value.trim(),
+      biotope: pendingBiotope,
+      weather: localGrowth ? {
+        rain: Number(localGrowth.rain.toFixed(1)),
+        balance: Number(localGrowth.balance.toFixed(1)),
+        moisture: Math.round(localGrowth.moisture * 100),
+        soilTemperature: Number(localGrowth.soilTemperature.toFixed(1))
+      } : null,
       ...pendingPosition
     });
     saveSpots(spots);
@@ -1553,7 +1710,7 @@ async function prepareServiceWorker() {
   if (!("serviceWorker" in navigator) || location.protocol === "file:") return;
   try {
     const previousController = navigator.serviceWorker.controller;
-    const registration = await navigator.serviceWorker.register("sw.js?v=12.1", { updateViaCache: "none" });
+    const registration = await navigator.serviceWorker.register("sw.js?v=13.1", { updateViaCache: "none" });
     await registration.update();
     if (previousController && navigator.serviceWorker.controller === previousController) {
       await Promise.race([

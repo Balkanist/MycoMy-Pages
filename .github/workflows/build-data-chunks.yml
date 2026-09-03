@@ -50,7 +50,7 @@ jobs:
               chunks.append({'file': filename, 'count': len(part)})
 
           index = {
-              'version': '12.5',
+              'version': '13.1',
               'type': 'FeatureCollectionChunks',
               'featureCount': len(features),
               'metadata': data.get('metadata') or {},

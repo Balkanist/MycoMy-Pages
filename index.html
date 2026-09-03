@@ -8,9 +8,9 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="MycoMy">
   <title>MycoMy</title>
-  <link rel="manifest" href="manifest.webmanifest?v=13.0">
+  <link rel="manifest" href="manifest.webmanifest?v=13.1">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=13.0">
+  <link rel="stylesheet" href="styles.css?v=13.1">
 </head>
 <body>
   <header class="hero">
@@ -75,7 +75,7 @@
     <section class="panel map-panel" aria-labelledby="mapTitle">
       <div class="section-heading">
         <div>
-          <p class="eyebrow">Modèle MycoMy v13.0 · météo spatialisée et analyse fine jusqu’à ~75–85 m</p>
+          <p class="eyebrow">Modèle MycoMy v13.1 · biotope GIS Sol et analyse fine jusqu’à ~75–85 m</p>
           <h2 id="mapTitle">Carte personnelle</h2>
         </div>
         <div class="map-actions">
@@ -104,7 +104,7 @@
           <strong id="zoneStatus">Chargement des forêts…</strong>
         </div>
       </div>
-      <p class="microcopy">Modèle multi-critères explicable : peuplements et hydrographie IGN, relief RGE ALTI/LiDAR, géologie BRGM, pH SoilGrids, sols GIS Sol/INRAE, probabilités d’essences JRC/FISE, météo Open‑Meteo Best Match et observations GBIF agrégées. À partir du zoom 15, les mailles ayant un score initial d’au moins 60/100, leurs voisines proches et les secteurs observés sont affinés à ~75–85 m. Les autres restent visibles avec leur score initial. Vos marqueurs restent dans ce navigateur.</p>
+      <p class="microcopy">Modèle multi-critères explicable : peuplements et hydrographie IGN, relief RGE ALTI/LiDAR, géologie BRGM, pH SoilGrids, unités et types de sols GIS Sol/INRAE, probabilités d’essences JRC/FISE, météo Open‑Meteo Best Match et observations GBIF agrégées. Le type de sol ne modifie que légèrement les mailles ayant déjà atteint 60/100 ; son pourcentage décrit la composition de l’unité cartographique, pas une certitude ponctuelle. À partir du zoom 15, les secteurs prometteurs sont affinés à ~75–85 m. Vos marqueurs et leur biotope restent dans ce navigateur.</p>
       <div class="data-sources" aria-label="Données intégrées">
         <span>🌳 Peuplements IGN</span><span>🌲 Essences RPP JRC</span><span>🧪 pH SoilGrids</span><span>🪨 Géologie BRGM 1:50 000</span><span>⛰ Relief/LiDAR IGN</span><span>💧 Hydrographie IGN</span><span>💦 Zones humides CIGAL</span><span>🌱 Sols GIS Sol/INRAE</span><span>🕰 Forêt ancienne</span><span>📍 GBIF agrégé</span>
       </div>
@@ -149,14 +149,18 @@
         <textarea id="spotNote" rows="3" placeholder="Sous hêtres, sol humide…"></textarea>
       </label>
       <p id="spotLocation" class="muted">Position : centre de la zone sélectionnée</p>
+      <section class="spot-biotope" aria-labelledby="spotBiotopeTitle">
+        <strong id="spotBiotopeTitle">Biotope du point</strong>
+        <div id="spotBiotope"><span class="muted">L’analyse démarrera à l’ouverture.</span></div>
+      </section>
       <button id="useLocationButton" class="secondary" type="button">Utiliser ma position</button>
       <button class="primary full" type="submit">Enregistrer sur cet iPhone</button>
     </form>
   </dialog>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=13.0"></script>
-  <script src="runtime-v12.5.js?v=13.0"></script>
-  <script src="tracking-v13.0.js?v=13.0"></script>
+  <script src="app.js?v=13.1"></script>
+  <script src="runtime-v12.5.js?v=13.1"></script>
+  <script src="tracking-v13.0.js?v=13.1"></script>
 </body>
 </html>
