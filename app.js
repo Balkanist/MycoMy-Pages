@@ -616,9 +616,12 @@ function interpolatedWeatherValue(lat, lng, selector, fallback = 0) {
   if (!weatherNodes.length) return fallback;
   const nearest = nearestWeatherNodes(lat, lng);
   const exact = nearest.find(item => item.distanceSquared < 1e-10);
-  if (exact) return Number(selector(exact.node)) || fallback;
+  if (exact) {
+    const value = selector(exact.node);
+    return Number.isFinite(value) ? value : fallback;
+  }
   const weighted = nearest.reduce((result, item) => {
-    const value = Number(selector(item.node));
+    const value = selector(item.node);
     if (!Number.isFinite(value)) return result;
     return { sum: result.sum + value * item.weight, weights: result.weights + item.weight };
   }, { sum: 0, weights: 0 });
@@ -660,11 +663,13 @@ function weatherSummaryForView() {
     potential: interpolatedWeatherValue(location.lat, location.lng, node => node.potential, weatherPotential),
     rain: interpolatedWeatherValue(location.lat, location.lng, node => node.rain, centerWeatherModel?.rain || 0),
     balance: interpolatedWeatherValue(location.lat, location.lng, node => node.balance, centerWeatherModel?.balance || 0),
-    moisture: interpolatedWeatherValue(location.lat, location.lng, node => node.moisture, centerWeatherModel?.moisture || 0),
+    moisture: interpolatedWeatherValue(location.lat, location.lng, node => node.moisture, centerWeatherModel?.moisture ?? NaN),
+    droughtKnown: interpolatedWeatherValue(location.lat, location.lng, node => node.droughtKnown ? 1 : 0, 0),
+    droughtCap: interpolatedWeatherValue(location.lat, location.lng, node => node.droughtCap, 100),
     soilTemperature: interpolatedWeatherValue(location.lat, location.lng, node => node.soilTemperature, centerWeatherModel?.soilTemperature || 0)
   }));
   const average = key => values.reduce((sum, value) => sum + value[key], 0) / values.length;
-  return { sample, potential: average("potential"), rain: average("rain"), balance: average("balance"), moisture: average("moisture"), soilTemperature: average("soilTemperature") };
+  return { sample, droughtKnown: average("droughtKnown") >= .99, droughtCap: Math.round(average("droughtCap")), potential: average("potential"), rain: average("rain"), balance: average("balance"), moisture: average("moisture"), soilTemperature: average("soilTemperature") };
 }
 
 function growthAtLocation(item, location) {
@@ -683,7 +688,10 @@ function growthAtLocation(item, location) {
     score: average(entry => entry.growth.score),
     rain: average(entry => entry.growth.rain),
     balance: average(entry => entry.growth.balance),
-    moisture: average(entry => entry.node.moisture),
+    moisture: average(entry => entry.growth.moisture),
+    droughtKnown: nearest.every(entry => entry.growth.droughtKnown),
+    rawScore: average(entry => entry.growth.rawScore),
+    droughtCap: average(entry => entry.growth.droughtCap),
     soilTemperature: average(entry => entry.node.soilTemperature),
     daysSinceRain: average(entry => entry.growth.daysSinceRain ?? 21),
     profile: nearest[0].growth.profile
@@ -706,6 +714,9 @@ function growthSummaryForView(item) {
     moisture: average("moisture"),
     soilTemperature: average("soilTemperature"),
     daysSinceRain: Math.round(average("daysSinceRain")),
+    droughtKnown: values.every(value => value.droughtKnown),
+    rawScore: Math.round(average("rawScore")),
+    droughtCap: Math.round(average("droughtCap")),
     profile: values[0].profile
   };
 }
@@ -724,6 +735,7 @@ function forecastGrowthAtLocation(item, location, offset) {
   };
   return {
     date: nearest[0].growth.date,
+    droughtCap: average(entry => entry.growth.droughtCap),
     score: average(entry => entry.growth.score),
     rain: average(entry => entry.growth.rain),
     balance: average(entry => entry.growth.balance),
@@ -738,6 +750,7 @@ function forecastGrowthSummaryForView(item, offset, sample) {
   const average = key => values.reduce((sum, value) => sum + value[key], 0) / values.length;
   return {
     date: values[0].date,
+    droughtCap: average("droughtCap"),
     score: Math.round(average("score")),
     minScore: Math.round(Math.min(...values.map(value => value.score))),
     maxScore: Math.round(Math.max(...values.map(value => value.score))),
@@ -763,7 +776,7 @@ function harvestSummaryForView(item, offset, sample) {
   if (!candidates.length || !current) return null;
   const weightTotal = candidates.reduce((sum, entry) => sum + entry.weight, 0);
   const matureGrowth = candidates.reduce((sum, entry) => sum + entry.growth.score * entry.weight, 0) / weightTotal;
-  const score = Math.max(0, Math.min(100, Math.round(matureGrowth * .8 + current.score * .2)));
+  const score = Math.max(0, Math.round(Math.min(current.droughtCap, matureGrowth * .8 + current.score * .2)));
   return { ...current, score, growthScore: current.score, minimumAge, maximumAge };
 }
 
@@ -816,9 +829,15 @@ function featureModel(feature) {
   if (scoreBeforeSoilTypology >= CASCADE_SCORE_THRESHOLD) {
     components.solTypologique = soilTypologyCompatibilityFor(modelingProperties, selectedMapSpecies);
   }
-  const score = Math.max(5, Math.min(100, Math.round(12 + Object.values(components).reduce((sum, value) => sum + value, 0))));
+  const rawScore = Math.max(5, Math.min(100, Math.round(12 + Object.values(components).reduce((sum, value) => sum + value, 0))));
+  const drought = droughtAtLocation(featureCenter(feature));
+  const score = limitScoreForDrought(rawScore, drought);
+  components.secheresse = score - rawScore;
   return {
     score,
+    rawScore,
+    droughtKnown: drought.known,
+    droughtCap: Math.round(drought.cap),
     initialScore: refined ? Number(properties.cascade_initial_score) : score,
     refined,
     confidence: modelConfidence(feature),
@@ -975,7 +994,7 @@ function renderForestZones({ skipTerrainFetch = false } = {}) {
         ? ` · zone humide ${model.components.zoneHumide >= 0 ? "+" : ""}${model.components.zoneHumide} · relief fin ${model.components.reliefFin >= 0 ? "+" : ""}${model.components.reliefFin}`
         : "";
       const soilContribution = model.components.solTypologique ? ` · type de sol ${model.components.solTypologique >= 0 ? "+" : ""}${model.components.solTypologique}` : "";
-      const explanation = `<br><small>Contributions : météo ${model.components.meteo >= 0 ? "+" : ""}${model.components.meteo} · peuplement ${model.components.peuplement >= 0 ? "+" : ""}${model.components.peuplement} · RPP ${model.components.arbresRpp >= 0 ? "+" : ""}${model.components.arbresRpp} · milieu ${model.components.milieu >= 0 ? "+" : ""}${model.components.milieu} · humidité ${model.components.humidite >= 0 ? "+" : ""}${model.components.humidite} · pH ${model.components.ph >= 0 ? "+" : ""}${model.components.ph}${soilContribution}${refinedContributions}</small>`;
+      const explanation = `<br><small>Contributions : météo ${model.components.meteo >= 0 ? "+" : ""}${model.components.meteo} · peuplement ${model.components.peuplement >= 0 ? "+" : ""}${model.components.peuplement} · RPP ${model.components.arbresRpp >= 0 ? "+" : ""}${model.components.arbresRpp} · milieu ${model.components.milieu >= 0 ? "+" : ""}${model.components.milieu} · humidité ${model.components.humidite >= 0 ? "+" : ""}${model.components.humidite} · pH ${model.components.ph >= 0 ? "+" : ""}${model.components.ph}${soilContribution}${refinedContributions} · sécheresse ${model.droughtKnown ? `${model.components.secheresse} (plafond ${model.droughtCap}/100)` : "données insuffisantes"}</small>`;
       const source = `<br><small>Météo + ${escapeHtml(feature.properties.source || "informations forestières OSM")}.</small>`;
       layer.bindPopup(`<strong>${model.refined ? "Score affiné" : "Score initial"} : ${score}/100</strong> · confiance des données ${model.confidence}/100<br>${escapeHtml(type)}${environment}${moisture}${soil}${soilTypology}${ph}${rpp}${fine}${detailedGeology}${wetland}${history}${calibrationText}${explanation}${source}`);
     }
@@ -1342,6 +1361,91 @@ function renderSpecies() {
   }));
 }
 
+// Heuristique prudente, à calibrer avec les observations terrain.
+// Le déficit climatique et la sécheresse du sol réduisent ET plafonnent les scores.
+const droughtStateCache = new WeakMap();
+
+function hydricStateForDay(model, end, minimumMoisture = .20) {
+  if (!model?.data?.daily) return { factor: 1, cap: 100, severity: 0, known: false, moisture: NaN };
+  const daily = model.data.daily;
+  const stop = Math.max(0, Math.min(end, daily.time.length));
+  let cache = droughtStateCache.get(model);
+  if (!cache) droughtStateCache.set(model, cache = new Map());
+  const key = stop + ":" + minimumMoisture;
+  if (cache.has(key)) return cache.get(key);
+  const start = Math.max(0, stop - 21);
+  const dates = daily.time.slice(start, stop);
+  const hourly = (model.soilData || model.data).hourly || {};
+  const byDate = new Map();
+  // Alignement par date, y compris lors des changements d'heure.
+  for (let index = 0; index < (hourly.time || []).length; index++) {
+    const date = hourly.time[index].slice(0, 10);
+    if (!dates.length || date < dates[0] || date > dates[dates.length - 1]) continue;
+    const value = hourly.soil_moisture_0_to_7cm?.[index];
+    if (!Number.isFinite(value) || value < 0 || value > 1) continue;
+    const group = byDate.get(date) || { sum: 0, count: 0 };
+    group.sum += value;
+    group.count++;
+    byDate.set(date, group);
+  }
+  const means = dates.map(date => {
+    const group = byDate.get(date);
+    return group?.count >= 12 ? group.sum / group.count : NaN;
+  });
+  const valid = means.filter(Number.isFinite);
+  const recent = means.slice(-3).filter(Number.isFinite);
+  const average = values => values.reduce((sum, value) => sum + value, 0) / values.length;
+  const soilKnown = dates.length >= 7 && valid.length >= Math.ceil(dates.length * .75);
+  const periodMoisture = soilKnown ? average(valid) : NaN;
+  const moisture = soilKnown ? periodMoisture * .7 + (recent.length ? average(recent) : periodMoisture) * .3 : NaN;
+  const balances = dates.map((date, offset) => {
+    const rain = daily.precipitation_sum?.[start + offset];
+    const et0 = daily.et0_fao_evapotranspiration?.[start + offset];
+    return Number.isFinite(rain) && rain >= 0 && Number.isFinite(et0) && et0 >= 0 ? rain - et0 : NaN;
+  }).filter(Number.isFinite);
+  const balanceKnown = dates.length >= 7 && balances.length >= Math.ceil(dates.length * .75);
+  const balance = balanceKnown ? balances.reduce((sum, value) => sum + value, 0) : NaN;
+  const clamp = value => Math.max(0, Math.min(1, value));
+  const soilStress = soilKnown ? clamp((minimumMoisture - moisture) / (minimumMoisture * .55)) : 0;
+  // Déficit ramené à 21 jours pour les fenêtres historiques plus courtes.
+  const deficitStress = balanceKnown ? clamp(-balance * 21 / balances.length / 60) : 0;
+  const dryFraction = soilKnown ? valid.filter(value => value < minimumMoisture * .85).length / valid.length : 0;
+  const severity = clamp(.65 * soilStress + .25 * deficitStress + .10 * dryFraction);
+  const state = {
+    known: soilKnown || balanceKnown, soilKnown, balanceKnown, moisture, periodMoisture,
+    balance, days: dates.length, severity,
+    factor: 1 - .9 * severity,
+    cap: Math.round(100 - 85 * severity)
+  };
+  cache.set(key, state);
+  return state;
+}
+
+function formatSoilMoisture(value) {
+  return Number.isFinite(value) ? (value * 100).toFixed(0) + " %" : "indisponible";
+}
+
+function limitScoreForDrought(score, state) {
+  return Math.max(0, Math.round(Math.min(state.cap, score * state.factor)));
+}
+
+function droughtAtLocation(location, speciesId = selectedMapSpecies) {
+  const profile = GROWTH_PROFILES[speciesId] || GROWTH_PROFILES.default;
+  const entries = nearestWeatherNodes(location.lat, location.lng);
+  const exact = entries.find(entry => entry.distanceSquared < 1e-10);
+  const nearest = exact ? [exact] : entries;
+  if (!nearest.length) return { factor: 1, cap: 100, known: false };
+  const weights = nearest.reduce((sum, entry) => sum + entry.weight, 0);
+  const states = nearest.map(entry => ({
+    ...entry, state: hydricStateForDay(entry.node, entry.node.historyDays, profile.moisture[0])
+  }));
+  return {
+    known: states.every(entry => entry.state.known),
+    factor: states.reduce((sum, entry) => sum + entry.state.factor * entry.weight, 0) / weights,
+    cap: states.reduce((sum, entry) => sum + entry.state.cap * entry.weight, 0) / weights
+  };
+}
+
 function sumRecent(values, end, days) {
   return values.slice(Math.max(0, end - days), end).reduce((sum, value) => sum + (Number(value) || 0), 0);
 }
@@ -1372,11 +1476,15 @@ function growthModelForDay(item, model, end, moisture = model?.moisture, soilTem
   const seasonal = Math.min(22, Math.round(seasonScoreFor(item, today) * 1.22));
   const rainPoints = Math.min(26, Math.round(rain / profile.rainTarget * 26));
   const balancePoints = Math.max(0, Math.min(14, Math.round(7 + balance / 8)));
-  const moisturePoints = rangeScore(moisture, profile.moisture, 20);
+  const drought = hydricStateForDay(model, end, profile.moisture[0]);
+  const growthMoisture = Number.isFinite(drought.moisture) ? drought.moisture : moisture;
+  const moisturePoints = rangeScore(growthMoisture, profile.moisture, 20);
   const temperaturePoints = rangeScore(soilTemperature, profile.soilTemp, 18);
-  const score = Math.max(0, Math.min(100, seasonal + rainPoints + balancePoints + moisturePoints + temperaturePoints));
+  const rawScore = Math.max(0, Math.min(100, seasonal + rainPoints + balancePoints + moisturePoints + temperaturePoints));
+  const score = limitScoreForDrought(rawScore, drought);
   return {
-    score, rain, balance, seasonal, rainPoints, balancePoints, moisturePoints, temperaturePoints,
+    score, rawScore, droughtKnown: drought.known, droughtFactor: drought.factor, droughtCap: drought.cap,
+    moisture: growthMoisture, rain, balance, seasonal, rainPoints, balancePoints, moisturePoints, temperaturePoints,
     daysSinceRain: daysSinceTriggerRain(daily, end, profile.triggerRain), profile
   };
 }
@@ -1398,7 +1506,7 @@ function growthModelForForecastDay(item, model, offset) {
   const moisture = forecastSoilAverage(model, dailyIndex, "soil_moisture_0_to_7cm", model?.moisture);
   const soilTemperature = forecastSoilAverage(model, dailyIndex, "soil_temperature_0cm", model?.soilTemperature);
   const result = growthModelForDay(item, model, dailyIndex + 1, moisture, soilTemperature);
-  return result ? { ...result, moisture, soilTemperature, date: model.data.daily.time[dailyIndex] } : null;
+  return result ? { ...result, soilTemperature, date: model.data.daily.time[dailyIndex] } : null;
 }
 
 function growthLevel(score) {
@@ -1421,7 +1529,7 @@ function renderGrowthIndicator() {
   document.querySelector("#growthBar").style.width = `${model.score}%`;
   document.querySelector("#growthStatus").textContent = level.label;
   const rainAge = model.daysSinceRain >= 21 ? `aucune pluie ≥ ${model.profile.triggerRain} mm depuis 21 j` : `dernière pluie ≥ ${model.profile.triggerRain} mm il y a ~${model.daysSinceRain} j`;
-  document.querySelector("#growthExplanation").textContent = `${model.rain.toFixed(1)} mm/${model.profile.rainDays} j · bilan ${model.balance >= 0 ? "+" : ""}${model.balance.toFixed(1)} mm · sol ${(model.moisture * 100).toFixed(0)} % et ${model.soilTemperature.toFixed(1)} °C · ${rainAge}.`;
+  document.querySelector("#growthExplanation").textContent = `${model.rain.toFixed(1)} mm/${model.profile.rainDays} j · bilan ${model.balance >= 0 ? "+" : ""}${model.balance.toFixed(1)} mm · humidité moyenne du sol sur 21 j ${formatSoilMoisture(model.moisture)} · sol ${model.soilTemperature.toFixed(1)} °C · ${rainAge}. Sécheresse : ${model.droughtKnown ? `${model.rawScore} → ${model.score}/100, plafond ${model.droughtCap}/100` : "données insuffisantes"}.`;
   document.querySelector("#growthScope").textContent = `Vue cartographique · ${viewExtentLabel(model.sample)} · plage ${model.minScore}–${model.maxScore}/100`;
 }
 
@@ -1429,7 +1537,7 @@ function renderWeatherOverview() {
   const model = weatherSummaryForView();
   if (!model) return;
   document.querySelector("#weatherScore").textContent = `${Math.round(model.potential)}/100`;
-  document.querySelector("#weatherDetails").textContent = `${viewExtentLabel(model.sample)} · ${model.rain.toFixed(1)} mm/21 j · bilan hydrique ${model.balance >= 0 ? "+" : ""}${model.balance.toFixed(1)} mm · humidité du sol ${(model.moisture * 100).toFixed(0)} % · sol ${model.soilTemperature.toFixed(1)} °C.`;
+  document.querySelector("#weatherDetails").textContent = `${viewExtentLabel(model.sample)} · ${model.rain.toFixed(1)} mm/21 j · bilan hydrique ${model.balance >= 0 ? "+" : ""}${model.balance.toFixed(1)} mm · humidité du sol (moyenne pondérée sur 21 j) ${formatSoilMoisture(model.moisture)} · sol ${model.soilTemperature.toFixed(1)} °C. Plafond sécheresse : ${model.droughtKnown ? `${model.droughtCap}/100` : "données insuffisantes"}.`;
 }
 
 function renderSpatialWeatherIndicators() {
@@ -1478,9 +1586,9 @@ async function loadWeather() {
       const temperatures = data.daily.temperature_2m_mean.slice(0, historyDays).filter(Number.isFinite);
       const mean = temperatures.reduce((sum, value) => sum + value, 0) / temperatures.length;
       const historicalHours = historyDays * 24;
-      const moistureValues = soilData.hourly.soil_moisture_0_to_7cm.slice(Math.max(0, historicalHours - 72), historicalHours).filter(Number.isFinite);
+      const drought = hydricStateForDay({ data, soilData }, historyDays);
+      const moisture = drought.moisture;
       const soilTemperatures = soilData.hourly.soil_temperature_0cm.slice(Math.max(0, historicalHours - 72), historicalHours).filter(Number.isFinite);
-      const moisture = moistureValues.reduce((sum, value) => sum + value, 0) / moistureValues.length;
       const soilTemperature = soilTemperatures.reduce((sum, value) => sum + value, 0) / soilTemperatures.length;
       const rainScore = Math.min(43, rain * 1.35);
       const balance = rain - et0;
@@ -1489,7 +1597,8 @@ async function loadWeather() {
       const soilTemperatureScore = soilTemperature >= 8 && soilTemperature <= 20 ? 15 : soilTemperature >= 4 && soilTemperature <= 24 ? 9 : 3;
       return {
         ...requestedPoints[index], data, soilData, historyDays, rain, et0, balance, mean, moisture, soilTemperature,
-        potential: Math.round(Math.min(100, rainScore + balanceScore + moistureScore + soilTemperatureScore))
+        droughtCap: drought.cap, droughtKnown: drought.known,
+        potential: limitScoreForDrought(Math.min(100, rainScore + balanceScore + moistureScore + soilTemperatureScore), drought)
       };
     });
     if (loadToken !== areaLoadToken) return;
@@ -1547,7 +1656,7 @@ function renderBestDays() {
     const delta = day.score - previous;
     const trend = delta >= 4 ? "↗" : delta <= -4 ? "↘" : "→";
     const date = new Date(`${day.date}T12:00:00`);
-    const title = `${day.score}/100 (plage ${day.minScore}–${day.maxScore}) · pluie ${day.rain.toFixed(1)} mm · bilan ${day.balance >= 0 ? "+" : ""}${day.balance.toFixed(1)} mm · sol ${(day.moisture * 100).toFixed(0)} % et ${day.soilTemperature.toFixed(1)} °C`;
+    const title = `${day.score}/100 (plage ${day.minScore}–${day.maxScore}) · pluie ${day.rain.toFixed(1)} mm · bilan ${day.balance >= 0 ? "+" : ""}${day.balance.toFixed(1)} mm · sol ${formatSoilMoisture(day.moisture)} et ${day.soilTemperature.toFixed(1)} °C`;
     return `
     <article class="forecast-day ${day.score === bestScore ? "best" : ""}" title="${title}" aria-label="${title}">
       <strong>${new Intl.DateTimeFormat("fr-FR", { weekday: "short" }).format(date).replace(".", "")}</strong>
@@ -1710,7 +1819,7 @@ async function prepareServiceWorker() {
   if (!("serviceWorker" in navigator) || location.protocol === "file:") return;
   try {
     const previousController = navigator.serviceWorker.controller;
-    const registration = await navigator.serviceWorker.register("sw.js?v=13.1", { updateViaCache: "none" });
+    const registration = await navigator.serviceWorker.register("sw.js?v=13.2", { updateViaCache: "none" });
     await registration.update();
     if (previousController && navigator.serviceWorker.controller === previousController) {
       await Promise.race([

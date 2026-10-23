@@ -78,7 +78,7 @@
       const previous = index ? days[index - 1].score : current;
       const delta = day.score - previous;
       const trend = delta >= 4 ? "↗" : delta <= -4 ? "↘" : "→";
-      const title = `Récolte estimée ${day.score}/100 · pousse ${day.growthScore}/100 · pluie ${day.rain.toFixed(1)} mm · bilan ${day.balance >= 0 ? "+" : ""}${day.balance.toFixed(1)} mm · sol ${(day.moisture * 100).toFixed(0)} % et ${day.soilTemperature.toFixed(1)} °C`;
+      const title = `Récolte estimée ${day.score}/100 · pousse ${day.growthScore}/100 · pluie ${day.rain.toFixed(1)} mm · bilan ${day.balance >= 0 ? "+" : ""}${day.balance.toFixed(1)} mm · sol ${formatSoilMoisture(day.moisture)} et ${day.soilTemperature.toFixed(1)} °C`;
       const weekday = new Intl.DateTimeFormat("fr-FR", { weekday: "short" }).format(day.parsed).replace(".", "");
       const dateLabel = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit" }).format(day.parsed);
       return `
@@ -138,9 +138,9 @@
         const temperatures = data.daily.temperature_2m_mean.slice(0, historyDays).map(Number).filter(Number.isFinite);
         const mean = temperatures.length ? temperatures.reduce((sum, value) => sum + value, 0) / temperatures.length : 0;
         const historicalHours = historyDays * 24;
-        const moistureValues = (data.hourly.soil_moisture_0_to_7cm || []).slice(Math.max(0, historicalHours - 72), historicalHours).map(Number).filter(Number.isFinite);
         const soilTemperatures = (data.hourly.soil_temperature_0cm || []).slice(Math.max(0, historicalHours - 72), historicalHours).map(Number).filter(Number.isFinite);
-        const moisture = moistureValues.length ? moistureValues.reduce((sum, value) => sum + value, 0) / moistureValues.length : 0;
+        const drought = hydricStateForDay({ data, soilData: data }, historyDays);
+        const moisture = drought.moisture;
         const soilTemperature = soilTemperatures.length ? soilTemperatures.reduce((sum, value) => sum + value, 0) / soilTemperatures.length : mean;
         const balance = rain - et0;
         const rainScore = Math.min(43, rain * 1.35);
@@ -159,7 +159,8 @@
           mean,
           moisture,
           soilTemperature,
-          potential: Math.round(Math.min(100, rainScore + balanceScore + moistureScore + soilTemperatureScore))
+          droughtCap: drought.cap, droughtKnown: drought.known,
+          potential: limitScoreForDrought(Math.min(100, rainScore + balanceScore + moistureScore + soilTemperatureScore), drought)
         };
       }).filter(Boolean);
 
