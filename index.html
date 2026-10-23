@@ -8,9 +8,9 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="MycoMy">
   <title>MycoMy</title>
-  <link rel="manifest" href="manifest.webmanifest?v=13.2">
+  <link rel="manifest" href="manifest.webmanifest?v=13.3">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=13.2">
+  <link rel="stylesheet" href="styles.css?v=13.3">
 </head>
 <body>
   <header class="hero">
@@ -38,7 +38,7 @@
     <section class="weather-card" aria-labelledby="weatherTitle">
       <div>
       <p class="eyebrow">Open‑Meteo · Best Match · bilan hydrique sur 21 jours</p>
-        <h2 id="weatherTitle">Indice météo local</h2>
+        <h2 id="weatherTitle">Indice météo général</h2>
       </div>
       <div id="weatherScore" class="score" aria-live="polite">—</div>
       <p id="weatherDetails" class="muted">Chargement des données locales…</p>
@@ -69,13 +69,13 @@
           <p class="forecast-legend"><span>Grand chiffre : récolte estimée</span><span>Pousse : conditions de fructification</span></p>
         </div>
       </div>
-      <p class="microcopy">Les indices suivent l’emprise visible de la carte et sont recalculés après un zoom ou un déplacement. La récolte estimée décale la pousse probable selon le temps de développement propre à l’espèce. Aucun indice ne confirme la présence ni la comestibilité d’un champignon.</p>
+      <p class="microcopy">L’indice météo décrit les conditions générales. Les scores de pousse, de récolte et de carte appliquent aussi la période habituelle de l’espèce sélectionnée. Les indices suivent l’emprise visible de la carte et sont recalculés après un zoom ou un déplacement. La récolte estimée décale la pousse probable selon le temps de développement propre à l’espèce. Aucun indice ne confirme la présence ni la comestibilité d’un champignon.</p>
     </section>
 
     <section class="panel map-panel" aria-labelledby="mapTitle">
       <div class="section-heading">
         <div>
-          <p class="eyebrow">Modèle MycoMy v13.2 · biotope GIS Sol et analyse fine jusqu’à ~75–85 m</p>
+          <p class="eyebrow">Modèle MycoMy v13.3 · biotope GIS Sol et analyse fine jusqu’à ~75–85 m</p>
           <h2 id="mapTitle">Carte personnelle</h2>
         </div>
         <div class="map-actions">
@@ -159,8 +159,8 @@
   </dialog>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=13.2"></script>
-  <script src="runtime-v12.5.js?v=13.2"></script>
-  <script src="tracking-v13.0.js?v=13.2"></script>
+  <script src="app.js?v=13.3"></script>
+  <script src="runtime-v12.5.js?v=13.3"></script>
+  <script src="tracking-v13.0.js?v=13.3"></script>
 </body>
 </html>

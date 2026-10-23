@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "12.8";
+  const VERSION = "13.3";
   const originalForestLoader = loadForestZones;
 
   function finite(value, fallback = 0) {
@@ -33,10 +33,11 @@
   renderBestDays = function renderBestDaysV126() {
     const container = document.querySelector("#bestDays");
     const intro = document.querySelector("#timingIntro");
-    if (!container || !weatherNodes.length) return;
+    if (!container) return;
 
     const selected = species.find(item => item.id === selectedMapSpecies);
     if (!selected) return;
+    if (!weatherNodes.length) { if (!isFruitingSeason(selected)) renderOutOfSeason(selected); return; }
     const sample = visibleWeatherLocations(90);
     const days = [];
 
@@ -82,7 +83,7 @@
       const weekday = new Intl.DateTimeFormat("fr-FR", { weekday: "short" }).format(day.parsed).replace(".", "");
       const dateLabel = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit" }).format(day.parsed);
       return `
-        <article class="forecast-day ${day.score === bestScore ? "best" : ""}" title="${title}" aria-label="${title}">
+        <article class="forecast-day ${day.score > 0 && day.score === bestScore ? "best" : ""}" title="${title}" aria-label="${title}">
           <strong>${weekday}</strong>
           <span class="forecast-date">${dateLabel}</span>
           <span class="day-score">${day.score}</span>
@@ -97,11 +98,15 @@
     if (indicator) indicator.className = `harvest-indicator level-${level.css}`;
     document.querySelector("#harvestValue").textContent = `${today.score}/100`;
     document.querySelector("#harvestBar").style.width = `${today.score}%`;
-    document.querySelector("#harvestStatus").textContent = level.label;
-    document.querySelector("#harvestExplanation").textContent = `Taille intéressante estimée après environ ${today.minimumAge} à ${today.maximumAge} jours de développement pour ${selected.name}.`;
+    document.querySelector("#harvestStatus").textContent = isFruitingSeason(selected, today.date) ? level.label : "Hors période habituelle de récolte";
+    document.querySelector("#harvestExplanation").textContent = isFruitingSeason(selected, today.date)
+      ? `Taille intéressante estimée après environ ${today.minimumAge} à ${today.maximumAge} jours de développement pour ${selected.name}.`
+      : `Période habituelle : ${fruitingPeriodLabel(selected)}. Score de récolte limité à 0/100 hors de cette période.`;
     const bestDay = days.reduce((best, day) => day.score > best.score ? day : best, days[0]);
     const bestLabel = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(bestDay.parsed);
-    document.querySelector("#harvestBestDay").textContent = bestDay.score === today.score
+    document.querySelector("#harvestBestDay").textContent = bestScore <= 0
+      ? "Aucun créneau de récolte favorable dans les 7 prochains jours"
+      : bestDay.score === today.score
       ? `Meilleur créneau estimé : aujourd’hui (${today.score}/100)`
       : `Meilleur créneau estimé : ${bestLabel} (${bestDay.score}/100)`;
   };

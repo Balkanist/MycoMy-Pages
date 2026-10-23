@@ -100,6 +100,57 @@ const HARVEST_WINDOWS = {
   "pleurote-huitre": [3, 6], "pholiote-peuplier": [3, 6], "bolet-jaune": [2, 5],
   sparassis: [5, 9], "bolet-bai": [3, 6], "collybie-veloutee": [3, 6], "russule-charbonniere": [3, 6]
 };
+// Fenêtres habituelles de fructification retenues pour les zones du Grand Est.
+// Les observations GBIF affinent les mois autorisés sans ouvrir une autre saison.
+const FRUITING_MONTHS = {
+  "morille-commune": [3, 4, 5],
+  "morille-conique": [3, 4, 5, 6],
+  "cepe-bordeaux": [6, 7, 8, 9, 10, 11],
+  "cepe-ete": [5, 6, 7, 8, 9, 10],
+  "cepe-pins": [5, 6, 7, 8, 9, 10, 11],
+  "cepe-bronze": [6, 7, 8, 9, 10],
+  "girolle": [6, 7, 8, 9, 10, 11],
+  "trompette": [6, 7, 8, 9, 10, 11],
+  "pied-mouton": [7, 8, 9, 10, 11, 12],
+  "coulemelle": [6, 7, 8, 9, 10, 11],
+  "saint-georges": [3, 4, 5, 6],
+  "chanterelle-tube": [8, 9, 10, 11, 12],
+  "lactaire-delicieux": [8, 9, 10, 11],
+  "oronge": [6, 7, 8, 9, 10],
+  "pleurote-huitre": [9, 10, 11, 12, 1, 2, 3],
+  "pholiote-peuplier": [4, 5, 6, 7, 8, 9, 10, 11],
+  "bolet-jaune": [7, 8, 9, 10, 11],
+  "sparassis": [7, 8, 9, 10, 11],
+  "bolet-bai": [6, 7, 8, 9, 10, 11],
+  "collybie-veloutee": [10, 11, 12, 1, 2, 3],
+  "russule-charbonniere": [6, 7, 8, 9, 10, 11]
+};
+const FRUITING_MONTH_NAMES = ["janvier", "février", "mars", "avril", "mai", "juin",
+  "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+
+function calendarDateInParis(date = new Date()) {
+  return new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Paris" }).format(date);
+}
+
+function calendarDateOffset(offset, isoDate = calendarDateInParis()) {
+  const date = new Date(isoDate + "T12:00:00Z");
+  date.setUTCDate(date.getUTCDate() + offset);
+  return date.toISOString().slice(0, 10);
+}
+
+function isFruitingSeason(item, isoDate = calendarDateInParis()) {
+  if (!item || typeof isoDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return false;
+  return (FRUITING_MONTHS[item.id] || []).includes(Number(isoDate.slice(5, 7)));
+}
+
+function fruitingPeriodLabel(item) {
+  const months = FRUITING_MONTHS[item?.id] || [];
+  if (!months.length) return "période non renseignée";
+  const first = FRUITING_MONTH_NAMES[months[0] - 1];
+  const last = FRUITING_MONTH_NAMES[months[months.length - 1] - 1];
+  return first === last ? first : first + " à " + last;
+}
+
 function weatherPointsFor(area) {
   const latStep = area.radius / 111;
   const lngStep = area.radius / (111 * Math.cos(area.lat * Math.PI / 180));
@@ -776,7 +827,9 @@ function harvestSummaryForView(item, offset, sample) {
   if (!candidates.length || !current) return null;
   const weightTotal = candidates.reduce((sum, entry) => sum + entry.weight, 0);
   const matureGrowth = candidates.reduce((sum, entry) => sum + entry.growth.score * entry.weight, 0) / weightTotal;
-  const score = Math.max(0, Math.round(Math.min(current.droughtCap, matureGrowth * .8 + current.score * .2)));
+  const score = isFruitingSeason(item, current.date)
+    ? Math.max(0, Math.round(Math.min(current.droughtCap, matureGrowth * .8 + current.score * .2)))
+    : 0;
   return { ...current, score, growthScore: current.score, minimumAge, maximumAge };
 }
 
@@ -831,11 +884,17 @@ function featureModel(feature) {
   }
   const rawScore = Math.max(5, Math.min(100, Math.round(12 + Object.values(components).reduce((sum, value) => sum + value, 0))));
   const drought = droughtAtLocation(featureCenter(feature));
-  const score = limitScoreForDrought(rawScore, drought);
-  components.secheresse = score - rawScore;
+  const afterDrought = limitScoreForDrought(rawScore, drought);
+  const item = species.find(entry => entry.id === selectedMapSpecies);
+  const inSeason = isFruitingSeason(item);
+  const score = inSeason ? afterDrought : 0;
+  components.secheresse = afterDrought - rawScore;
+  components.saison = score - afterDrought;
   return {
     score,
     rawScore,
+    inSeason,
+    seasonLabel: fruitingPeriodLabel(item),
     droughtKnown: drought.known,
     droughtCap: Math.round(drought.cap),
     initialScore: refined ? Number(properties.cascade_initial_score) : score,
@@ -859,14 +918,15 @@ function bestPlaceScore(feature, item) {
     return { ...harvest, offset };
   }).filter(Boolean);
   const bestHarvest = harvestDays.reduce((best, day) => !best || day.score > best.score ? day : best, null);
-  const harvestScore = bestHarvest?.score ?? localWeatherPotential(feature);
+  const inSeason = isFruitingSeason(item, bestHarvest?.date || calendarDateInParis());
+  const harvestScore = inSeason ? (bestHarvest?.score ?? localWeatherPotential(feature)) : 0;
   return {
     feature,
     location,
     placeScore: place.score,
     harvestScore: Math.round(harvestScore),
     bestHarvest,
-    score: Math.round(place.score * .65 + harvestScore * .35),
+    score: inSeason ? Math.round(place.score * .65 + harvestScore * .35) : 0,
     confidence: place.confidence
   };
 }
@@ -874,6 +934,11 @@ function bestPlaceScore(feature, item) {
 function showBestPlace() {
   const button = document.querySelector("#bestPlaceButton");
   const item = species.find(entry => entry.id === selectedMapSpecies);
+  if (item && !Array.from({ length: 7 }, (_, day) => isFruitingSeason(item, calendarDateOffset(day))).some(Boolean)) {
+    if (bestPlaceMarker) { bestPlaceMarker.remove(); bestPlaceMarker = null; }
+    alert(`${item.name} : hors période habituelle (${fruitingPeriodLabel(item)}). Aucun créneau de récolte conseillé sur les 7 prochains jours.`);
+    return;
+  }
   const candidates = renderedFeatures.filter(feature =>
     distanceFromActiveArea(feature) <= advancedFilters.radius && matchesForestFilter(feature)
   );
@@ -895,7 +960,10 @@ function showBestPlace() {
     }, null);
     button.disabled = false;
     button.textContent = "⌖ Meilleur endroit / meilleur moment pour la récolte";
-    if (!best) return;
+    if (!best || best.score <= 0 || best.harvestScore <= 0) {
+      alert("Aucun créneau de récolte favorable dans les 7 prochains jours.");
+      return;
+    }
     if (bestPlaceMarker) bestPlaceMarker.remove();
     bestPlaceMarker = L.circleMarker([best.location.lat, best.location.lng], {
       radius: 11, color: "#fff", weight: 3, fillColor: "#d49a2f", fillOpacity: 1
@@ -994,7 +1062,7 @@ function renderForestZones({ skipTerrainFetch = false } = {}) {
         ? ` · zone humide ${model.components.zoneHumide >= 0 ? "+" : ""}${model.components.zoneHumide} · relief fin ${model.components.reliefFin >= 0 ? "+" : ""}${model.components.reliefFin}`
         : "";
       const soilContribution = model.components.solTypologique ? ` · type de sol ${model.components.solTypologique >= 0 ? "+" : ""}${model.components.solTypologique}` : "";
-      const explanation = `<br><small>Contributions : météo ${model.components.meteo >= 0 ? "+" : ""}${model.components.meteo} · peuplement ${model.components.peuplement >= 0 ? "+" : ""}${model.components.peuplement} · RPP ${model.components.arbresRpp >= 0 ? "+" : ""}${model.components.arbresRpp} · milieu ${model.components.milieu >= 0 ? "+" : ""}${model.components.milieu} · humidité ${model.components.humidite >= 0 ? "+" : ""}${model.components.humidite} · pH ${model.components.ph >= 0 ? "+" : ""}${model.components.ph}${soilContribution}${refinedContributions} · sécheresse ${model.droughtKnown ? `${model.components.secheresse} (plafond ${model.droughtCap}/100)` : "données insuffisantes"}</small>`;
+      const explanation = `<br><small>Contributions : météo ${model.components.meteo >= 0 ? "+" : ""}${model.components.meteo} · peuplement ${model.components.peuplement >= 0 ? "+" : ""}${model.components.peuplement} · RPP ${model.components.arbresRpp >= 0 ? "+" : ""}${model.components.arbresRpp} · milieu ${model.components.milieu >= 0 ? "+" : ""}${model.components.milieu} · humidité ${model.components.humidite >= 0 ? "+" : ""}${model.components.humidite} · pH ${model.components.ph >= 0 ? "+" : ""}${model.components.ph}${soilContribution}${refinedContributions} · sécheresse ${model.droughtKnown ? `${model.components.secheresse} (plafond ${model.droughtCap}/100)` : "données insuffisantes"} · saison ${model.components.saison} (${model.inSeason ? "en période" : "hors période"} : ${model.seasonLabel})</small>`;
       const source = `<br><small>Météo + ${escapeHtml(feature.properties.source || "informations forestières OSM")}.</small>`;
       layer.bindPopup(`<strong>${model.refined ? "Score affiné" : "Score initial"} : ${score}/100</strong> · confiance des données ${model.confidence}/100<br>${escapeHtml(type)}${environment}${moisture}${soil}${soilTypology}${ph}${rpp}${fine}${detailedGeology}${wetland}${history}${calibrationText}${explanation}${source}`);
     }
@@ -1340,7 +1408,7 @@ function renderSpecies() {
     <article class="species-card">
       <div class="species-top">
         <div><p class="species-name">${item.name}</p><p class="latin">${item.latin}</p></div>
-        <span class="season">${item.season}</span>
+        <span class="season">${fruitingPeriodLabel(item)}</span>
       </div>
       <p class="microcopy">${item.habitat}</p>
       <p class="risk">⚠ ${item.risk}</p>
@@ -1465,14 +1533,15 @@ function rangeScore(value, [low, high], maximum) {
   return Math.max(0, Math.round(maximum * (1 - distance / span)));
 }
 
-function growthModelForDay(item, model, end, moisture = model?.moisture, soilTemperature = model?.soilTemperature) {
+function growthModelForDay(item, model, end, moisture = model?.moisture, soilTemperature = model?.soilTemperature, evaluationDate) {
   if (!item || !model?.data?.daily) return null;
   const profile = GROWTH_PROFILES[item.id] || GROWTH_PROFILES.default;
   const daily = model.data.daily;
   const rain = sumRecent(daily.precipitation_sum, end, profile.rainDays);
   const et0 = sumRecent(daily.et0_fao_evapotranspiration, end, profile.rainDays);
   const balance = rain - et0;
-  const today = daily.time[Math.max(0, end - 1)] || new Date().toISOString().slice(0, 10);
+  const today = evaluationDate || daily.time[Math.max(0, end - 1)] || calendarDateInParis();
+  const inSeason = isFruitingSeason(item, today);
   const seasonal = Math.min(22, Math.round(seasonScoreFor(item, today) * 1.22));
   const rainPoints = Math.min(26, Math.round(rain / profile.rainTarget * 26));
   const balancePoints = Math.max(0, Math.min(14, Math.round(7 + balance / 8)));
@@ -1481,16 +1550,16 @@ function growthModelForDay(item, model, end, moisture = model?.moisture, soilTem
   const moisturePoints = rangeScore(growthMoisture, profile.moisture, 20);
   const temperaturePoints = rangeScore(soilTemperature, profile.soilTemp, 18);
   const rawScore = Math.max(0, Math.min(100, seasonal + rainPoints + balancePoints + moisturePoints + temperaturePoints));
-  const score = limitScoreForDrought(rawScore, drought);
+  const score = inSeason ? limitScoreForDrought(rawScore, drought) : 0;
   return {
-    score, rawScore, droughtKnown: drought.known, droughtFactor: drought.factor, droughtCap: drought.cap,
+    score, inSeason, seasonLabel: fruitingPeriodLabel(item), rawScore, droughtKnown: drought.known, droughtFactor: drought.factor, droughtCap: drought.cap,
     moisture: growthMoisture, rain, balance, seasonal, rainPoints, balancePoints, moisturePoints, temperaturePoints,
     daysSinceRain: daysSinceTriggerRain(daily, end, profile.triggerRain), profile
   };
 }
 
 function growthModelFor(item, model = centerWeatherModel) {
-  return growthModelForDay(item, model, model?.historyDays || 0);
+  return growthModelForDay(item, model, model?.historyDays || 0, model?.moisture, model?.soilTemperature, calendarDateInParis());
 }
 
 function forecastSoilAverage(model, dailyIndex, field, fallback) {
@@ -1517,19 +1586,42 @@ function growthLevel(score) {
   return { css: "low", label: "Pousse peu probable actuellement" };
 }
 
+function renderOutOfSeason(item) {
+  const period = fruitingPeriodLabel(item);
+  document.querySelector("#growthIndicator").className = "growth-indicator level-low";
+  document.querySelector("#growthSpecies").textContent = item.name;
+  document.querySelector("#growthValue").textContent = "0/100";
+  document.querySelector("#growthBar").style.width = "0%";
+  document.querySelector("#growthStatus").textContent = "Hors période habituelle de pousse";
+  document.querySelector("#growthExplanation").textContent = "Période habituelle : " + period + ". Score limité à 0/100 hors de cette période.";
+  document.querySelector("#growthScope").textContent = "Calendrier de l’espèce · météo indisponible";
+  document.querySelector("#harvestIndicator").className = "harvest-indicator level-low";
+  document.querySelector("#harvestValue").textContent = "0/100";
+  document.querySelector("#harvestBar").style.width = "0%";
+  document.querySelector("#harvestStatus").textContent = "Hors période habituelle de récolte";
+  document.querySelector("#harvestExplanation").textContent = "Période habituelle : " + period + ".";
+  document.querySelector("#harvestBestDay").textContent = "Prévisions météo indisponibles";
+  document.querySelector("#timingIntro").textContent = item.name + " · période habituelle : " + period;
+  document.querySelector("#bestDays").innerHTML = "<p class='muted'>Prévisions météo indisponibles. Score actuel hors période : 0/100.</p>";
+}
+
 function renderGrowthIndicator() {
   const item = species.find(entry => entry.id === selectedMapSpecies);
   const model = growthSummaryForView(item);
-  if (!item || !model) return;
+  if (!item) return;
+  if (!model && !isFruitingSeason(item)) { renderOutOfSeason(item); return; }
+  if (!model) return;
   const indicator = document.querySelector("#growthIndicator");
   const level = growthLevel(model.score);
   indicator.className = `growth-indicator level-${level.css}`;
   document.querySelector("#growthSpecies").textContent = item.name;
   document.querySelector("#growthValue").textContent = `${model.score}/100`;
   document.querySelector("#growthBar").style.width = `${model.score}%`;
-  document.querySelector("#growthStatus").textContent = level.label;
+  document.querySelector("#growthStatus").textContent = isFruitingSeason(item) ? level.label : "Hors période habituelle de pousse";
   const rainAge = model.daysSinceRain >= 21 ? `aucune pluie ≥ ${model.profile.triggerRain} mm depuis 21 j` : `dernière pluie ≥ ${model.profile.triggerRain} mm il y a ~${model.daysSinceRain} j`;
-  document.querySelector("#growthExplanation").textContent = `${model.rain.toFixed(1)} mm/${model.profile.rainDays} j · bilan ${model.balance >= 0 ? "+" : ""}${model.balance.toFixed(1)} mm · humidité moyenne du sol sur 21 j ${formatSoilMoisture(model.moisture)} · sol ${model.soilTemperature.toFixed(1)} °C · ${rainAge}. Sécheresse : ${model.droughtKnown ? `${model.rawScore} → ${model.score}/100, plafond ${model.droughtCap}/100` : "données insuffisantes"}.`;
+  document.querySelector("#growthExplanation").textContent = !isFruitingSeason(item)
+    ? `Période habituelle : ${fruitingPeriodLabel(item)}. Score de pousse limité à 0/100 hors de cette période.`
+    : `${model.rain.toFixed(1)} mm/${model.profile.rainDays} j · bilan ${model.balance >= 0 ? "+" : ""}${model.balance.toFixed(1)} mm · humidité moyenne du sol sur 21 j ${formatSoilMoisture(model.moisture)} · sol ${model.soilTemperature.toFixed(1)} °C · ${rainAge}. Sécheresse : ${model.droughtKnown ? `${model.rawScore} → ${model.score}/100, plafond ${model.droughtCap}/100` : "données insuffisantes"}.`;
   document.querySelector("#growthScope").textContent = `Vue cartographique · ${viewExtentLabel(model.sample)} · plage ${model.minScore}–${model.maxScore}/100`;
 }
 
@@ -1627,24 +1719,20 @@ async function loadWeather() {
 }
 
 function seasonScoreFor(item, isoDate) {
-  const month = new Date(`${isoDate}T12:00:00`).getMonth() + 1;
-  const text = item.season.toLowerCase();
-  const allowed = [];
-  if (text.includes("printemps")) allowed.push(3, 4, 5);
-  if (text.includes("été")) allowed.push(6, 7, 8);
-  if (text.includes("automne")) allowed.push(9, 10, 11);
-  if (text.includes("hiver")) allowed.push(12, 1, 2);
-  const calendarScore = allowed.includes(month) ? 15 : 2;
+  if (!isFruitingSeason(item, isoDate)) return 0;
+  const month = Number(isoDate.slice(5, 7));
   const observedMonths = observationModel.species?.[item.id]?.months || [];
-  const peak = Math.max(...observedMonths, 0);
-  if (!peak) return calendarScore;
+  const allowed = FRUITING_MONTHS[item.id];
+  const peak = Math.max(...allowed.map(value => Number(observedMonths[value - 1]) || 0), 0);
+  if (!peak) return 15;
   const observedScore = 2 + 16 * Number(observedMonths[month - 1] || 0) / peak;
-  return Math.round(calendarScore * .45 + observedScore * .55);
+  return Math.round(15 * .45 + observedScore * .55);
 }
 
 function renderBestDays() {
-  if (!weatherNodes.length) return;
   const selected = species.find(item => item.id === selectedMapSpecies);
+  if (!selected) return;
+  if (!weatherNodes.length) { if (!isFruitingSeason(selected)) renderOutOfSeason(selected); return; }
   const sample = visibleWeatherLocations(90);
   const days = Array.from({ length: 7 }, (_, offset) => forecastGrowthSummaryForView(selected, offset, sample)).filter(Boolean);
   if (!days.length) return;
@@ -1658,7 +1746,7 @@ function renderBestDays() {
     const date = new Date(`${day.date}T12:00:00`);
     const title = `${day.score}/100 (plage ${day.minScore}–${day.maxScore}) · pluie ${day.rain.toFixed(1)} mm · bilan ${day.balance >= 0 ? "+" : ""}${day.balance.toFixed(1)} mm · sol ${formatSoilMoisture(day.moisture)} et ${day.soilTemperature.toFixed(1)} °C`;
     return `
-    <article class="forecast-day ${day.score === bestScore ? "best" : ""}" title="${title}" aria-label="${title}">
+    <article class="forecast-day ${day.score > 0 && day.score === bestScore ? "best" : ""}" title="${title}" aria-label="${title}">
       <strong>${new Intl.DateTimeFormat("fr-FR", { weekday: "short" }).format(date).replace(".", "")}</strong>
       <span class="forecast-date">${new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit" }).format(date)}</span>
       <span class="day-score">${day.score}</span>
@@ -1819,7 +1907,7 @@ async function prepareServiceWorker() {
   if (!("serviceWorker" in navigator) || location.protocol === "file:") return;
   try {
     const previousController = navigator.serviceWorker.controller;
-    const registration = await navigator.serviceWorker.register("sw.js?v=13.2", { updateViaCache: "none" });
+    const registration = await navigator.serviceWorker.register("sw.js?v=13.3", { updateViaCache: "none" });
     await registration.update();
     if (previousController && navigator.serviceWorker.controller === previousController) {
       await Promise.race([
